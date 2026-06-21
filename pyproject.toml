@@ -1,7 +1,7 @@
 [project]
-name = "Theforexprophetess-bot"
+name = "Theforexprofetex-bot"
 version = "0.1.0"
-description = "Theforexprophetess Telegram bot — verifies Exness partner linkage"
+description = "Theforexprofetex Telegram bot — verifies Exness partner linkage"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-Theforexprophetess-bot = "main:main"
+Theforexpropfetex-bot = "main:main"
 
 [tool.uv]
 dev-dependencies = ["pytest>=8.0", "pytest-asyncio>=0.23"]

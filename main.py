@@ -252,11 +252,15 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(faq_answer, pattern=faq_pattern))
 
     # ── Daily activity check — runs at 3AM UTC ────────────────────────────────
-    app.job_queue.run_daily(
-        _daily_activity_job,
-        time=dtime(hour=3, minute=0),
-        name="daily_activity_check",
-    )
+    if app.job_queue:
+        app.job_queue.run_daily(
+            _daily_activity_job,
+            time=dtime(hour=3, minute=0),
+            name="daily_activity_check",
+        )
+        logger.info("daily_job_scheduled")
+    else:
+        logger.warning("job_queue_not_available_skipping_scheduler")
 
     # ── Global error handler ──────────────────────────────────────────────────
     async def error_handler(update, context) -> None:
