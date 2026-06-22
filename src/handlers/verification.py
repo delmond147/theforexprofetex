@@ -314,6 +314,8 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await update.message.reply_text(
             "✅ *Verified! Welcome to {MENTOR_NAME} {group_word} Mentorship!*\n\n"
             "Your Exness account (`{email}`) is linked to {MENTOR_NAME}. 🎉\n\n"
+            "Now login to your exness and create a new trading account\n\n"
+            "Deposit funds to trade my signals else you'll be kicked out of the group\n\n"
             "Tap below to join your group and start learning!".format(
                 MENTOR_NAME=MENTOR_NAME, group_word=group_word, email=email
             ),

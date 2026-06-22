@@ -93,7 +93,7 @@ def save_verification(
             UPDATE users
             SET verified_email  = ?,
                 mentorship_type = ?,
-                verified_at     = ?
+                verified_at     = ?,
                 removed         = 0,
                 warning_sent_at = NULL
             WHERE telegram_id = ?
