@@ -781,7 +781,7 @@ async def broker_subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         ),
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardMarkup("❌ Cancel", callback_data="main_menu")]],
+            [[InlineKeyboardButton("❌ Cancel", callback_data="main_menu")]],
         ),
     )
     return AWAITING_BROKER_NAME
