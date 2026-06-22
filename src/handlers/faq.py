@@ -17,8 +17,8 @@ FAQ_ITEMS = {
         "live market experience, {MENTOR_NAME} makes trading simple, practical, and accessible. 📈",
     ),
     "faq_free": (
-        "🆓 *Is the Marathon Forex University really free?*",
-        "Yes! Joining the Marathon Forex University programs are completely free "
+        "🆓 *Exness VIP Signal group really free?*",
+        "Yes! Joining the EXNESS VIP SIGNAL GROUP is completely free "
         "as long as your Exness trading account is registered under {MENTOR_NAME}'s "
         "partner link. That's all it takes to unlock full access. ✅",
     ),
@@ -37,7 +37,8 @@ FAQ_ITEMS = {
         "4️⃣ Follow the link the Exness bot sends\n"
         "5️⃣ Select *Rebate* as the reason\n"
         "6️⃣ Enter {MENTOR_NAME}'s partner link ({PARTNER_LINK})\n\n"
-        "The change usually takes a few minutes. ⏳",
+        "The change usually takes a few minutes. ⏳\n\n",
+        "After the change, make sure to create a new trading account on exness.",
     ),
     "faq_verify_time": (
         "⏱ *How long does verification take?*",
