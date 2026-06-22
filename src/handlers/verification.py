@@ -52,7 +52,7 @@ from src.handlers.admin import (
     notify_admin,
     verified_message,
     failed_verification_message,
-    vip_inquiry_message,
+    # vip_inquiry_message,
 )
 
 # ConversationHandler states
@@ -299,7 +299,7 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             )
         elif mentorship == "advanced":
             group_word, success_kb, group_url = (
-                "Marathon Forex University VIP",
+                "EXNESS VIP SIGNALS",
                 verified_advanced(),
                 ADVANCED_GROUP_LINK,
             )
@@ -612,11 +612,11 @@ async def vip_package_selected(
     context.user_data["vip_package_price"] = package_price
 
     # Notify admin of new VIP inquiry
-    user = query.from_user
-    await notify_admin(
-        context.bot,
-        vip_inquiry_message(user.first_name, user.username),
-    )
+    # user = query.from_user
+    # await notify_admin(
+    #     context.bot,
+    #     vip_inquiry_message(user.first_name, user.username),
+    # )
 
     await query.edit_message_text(
         (
@@ -742,7 +742,7 @@ async def different_broker_entry(
     await query.answer()
 
     await query.edit_message_text(
-        (
+        text=(
             "🔄 *Using a Different Broker?*\n\n"
             "No problem! You can still join the {MENTOR_NAME} VIP group "
             "with your current broker.\n\n"

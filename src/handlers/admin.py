@@ -356,15 +356,15 @@ def failed_verification_message(
     )
 
 
-def vip_inquiry_message(first_name: str, username: str | None) -> str:
-    handle = f"@{username}" if username else "no username"
-    now = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
-    return (
-        "💎 *New VIP Inquiry!*\n\n"
-        f"👤 {first_name} ({handle})\n"
-        f"🕐 {now}"
-        "_This user has expressed interest in the VIP Mentorship. Follow up with them to provide more details._"
-    )
+# def vip_inquiry_message(first_name: str, username: str | None) -> str:
+#     handle = f"@{username}" if username else "no username"
+#     now = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+#     return (
+#         "💎 *New VIP Inquiry!*\n\n"
+#         f"👤 {first_name} ({handle})\n"
+#         f"🕐 {now}"
+#         "_This user has expressed interest in the VIP Mentorship. Follow up with them to provide more details._"
+#     )
 
 
 def new_user_message(first_name: str, username: str | None) -> str:
