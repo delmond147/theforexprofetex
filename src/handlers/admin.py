@@ -9,7 +9,7 @@ from telegram import Update, Bot
 from telegram.ext import ContextTypes, ConversationHandler
 
 # Import MENTOR_NAME alongside ADMIN_CHAT_ID for multi-client dynamic rendering
-from src.core.settings import ADMIN_CHAT_ID, MENTOR_NAME
+from src.core.settings import ADMIN_CHAT_ID, MENTOR_NAME, MENTORSHIP_ADVANCED_LABEL
 from src.core.vault import encrypt
 from src.db.database import (
     get_all_user_ids,
@@ -324,6 +324,13 @@ async def notify_admin(bot: Bot, message: str) -> None:
         logger.error("admin_notify_failed", error=str(e))
 
 
+MENTORSHIP_DISPLAY_NAME = {
+    "beginners": "Beginners Mentorship",
+    "advanced": MENTORSHIP_ADVANCED_LABEL,
+    "swing": "Beginners Mentorship",
+}
+
+
 def verified_message(
     first_name: str,
     username: str | None,
@@ -332,11 +339,12 @@ def verified_message(
 ) -> str:
     handle = f"@{username}" if username else "no username"
     now = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+    display = MENTORSHIP_DISPLAY_NAME.get(mentorship, mentorship.capitalize())
     return (
         "🔔 *New Verified Member!*\n\n"
         f"👤 {first_name} ({handle})\n"
         f"📧 {email}\n"
-        f"📚 {mentorship.capitalize()} Mentorship\n"
+        f"📚 {display}\n"
         f"🕐 {now}"
     )
 

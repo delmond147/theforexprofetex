@@ -92,3 +92,7 @@ VIP_ONE_ON_ONE_PRICE: str = os.environ.get("VIP_ONE_ON_ONE_PRICE", "$1200")
 VIP_GROUP_PRICE: str = os.environ.get("VIP_GROUP_PRICE", "$250")
 VIP_ONE_ON_ONE_PAYMENT_LINK: str = os.environ.get("VIP_ONE_ON_ONE_PAYMENT_LINK", "")
 VIP_GROUP_PAYMENT_LINK: str = os.environ.get("VIP_GROUP_PAYMENT_LINK", "")
+
+MENTORSHIP_ADVANCED_LABEL: str = os.environ.get(
+    "MENTORSHIP_ADVANCED_LABEL", "EXNESS VIP SIGNALS"
+)
