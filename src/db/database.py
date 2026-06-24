@@ -181,7 +181,7 @@ def mark_removed(telegram_id: int) -> None:
         conn.execute(
             """
             UPDATE users
-            SET removed = 1
+            SET removed = 1,
                 verified_email = NULL,
                 warning_sent_at = NULL,
             WHERE telegram_id = ?
@@ -290,12 +290,12 @@ def save_incomplete_flow(
         conn.execute(
             """
             INSERT INTO incomplete_flows (telegram_id, username, first_name, started_at, reminder_count)
-        VALUES (?, ?, ?, ?, datetime('now'), 0)
+        VALUES (?, ?, ?, datetime('now'), 0)
         ON CONFLICT(telegram_id) DO UPDATE SET
             flow_type   = excluded.flow_type,
             started_at  = excluded.started_at,
             reminder_count   = 0,
-            laste_reminder   = NULL
+            last_reminder   = NULL
         """,
             (telegram_id, username, first_name, flow_type),
         )
