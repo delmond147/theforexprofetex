@@ -74,7 +74,7 @@ from src.handlers.verification import (
     AWAITING_BROKER_PHONE,
 )
 from src.db.database import init_db
-from src.services.activity_checker import run_activity_check
+from src.services.activity_checker import run_activity_check, run_reminder_check
 
 
 async def help_command(update, context) -> None:
@@ -251,6 +251,11 @@ def build_app() -> Application:
     faq_pattern = "^(" + "|".join(FAQ_ITEMS.keys()) + ")$"
     app.add_handler(CallbackQueryHandler(faq_answer, pattern=faq_pattern))
 
+    async def _reminder_job(context) -> None:
+        """Wrapper for the 4-hour incomplete flow reminder."""
+        logger.info("reminder_job_triggered")
+        await run_reminder_check(context.bot)
+
     # ── Daily activity check — runs at 3AM UTC ────────────────────────────────
     if app.job_queue:
         app.job_queue.run_daily(
@@ -261,6 +266,24 @@ def build_app() -> Application:
         logger.info("daily_job_scheduled")
     else:
         logger.warning("job_queue_not_available_skipping_scheduler")
+
+    # ---- Reminder job - runs every 4 hours
+    if app.job_queue:
+        app.job_queue.run_daily(
+            _daily_activity_job,
+            time=dtime(hour=3, minute=0),
+            name="daily_activity_check",
+        )
+        app.job_queue.run_repeating(
+            _reminder_job,
+            interval=14400,  # 4 hours in seconds
+            first=300,  # first run 5 minutes after bot starts
+            name="incomplete_flow_reminder",
+        )
+        logger.info("jobs_scheduled")
+
+    else:
+        logger.warning("job_queue_not_available")
 
     # ── Global error handler ──────────────────────────────────────────────────
     async def error_handler(update, context) -> None:

@@ -96,3 +96,13 @@ VIP_GROUP_PAYMENT_LINK: str = os.environ.get("VIP_GROUP_PAYMENT_LINK", "")
 MENTORSHIP_ADVANCED_LABEL: str = os.environ.get(
     "MENTORSHIP_ADVANCED_LABEL", "EXNESS VIP SIGNALS"
 )
+# ── Mentorship Labels (dynamic per client) ────────────────────────────────────
+LABEL_BEGINNERS: str = os.environ.get("LABEL_BEGINNERS", "EXNESS VIP SIGNALS")
+LABEL_ADVANCED: str = os.environ.get("LABEL_ADVANCED", "Advanced Mentorship")
+LABEL_SWING: str = os.environ.get("LABEL_SWING", "Swing Trading")
+LABEL_VIP: str = os.environ.get("LABEL_VIP", "VIP Mentorship")
+LABEL_SIGNAL: str = os.environ.get("LABEL_SIGNAL", "VIP Signal")
+LABEL_INNER_CIRCLE: str = os.environ.get("LABEL_INNER_CIRCLE", "Inner Circle Community")
+LABEL_DIFFERENT_BROKER: str = os.environ.get(
+    "LABEL_DIFFERENT_BROKER", "Using Different Broker?"
+)

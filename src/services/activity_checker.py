@@ -10,6 +10,7 @@ import asyncio
 from datetime import datetime, timezone
 from telegram import Bot
 from telegram.error import TelegramError
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from src.core.settings import (
     BOT_TOKEN,
@@ -18,6 +19,15 @@ from src.core.settings import (
     INACTIVITY_DAYS,
     WARNING_DAYS,
     MENTOR_NAME,
+    ADMIN_CHAT_ID,
+    VIP_GROUP_ID,
+    INACTIVITY_DAYS,
+    WARNING_DAYS,
+    MENTOR_NAME,
+    MENTOR_CONTACT,
+    LABEL_BEGINNERS,
+    LABEL_ADVANCED,
+    LABEL_SWING,
 )
 from src.db.database import (
     get_all_verified_users,
@@ -239,3 +249,84 @@ async def run_activity_check(bot: Bot) -> None:
         warned=warned_count,
         removed=removed_count,
     )
+
+
+async def run_reminder_check(bot: Bot) -> None:
+    """
+    Runs every 2 hours.
+    sends reminder message to users who started but didn't complete a flow.
+    stops after 3 reminders per flow.
+    """
+
+    from src.db.database import (
+        get_users_to_remind,
+        mark_reminded,
+        clear_incomplete_flow,
+    )
+    from src.core.settings import MENTOR_NAME, MENTOR_CONTACT
+
+    users = get_users_to_remind(hours=2)
+    logger.info("reminder_check_started", count=len(users))
+
+    for user in users:
+        telegram_id = user["telegram_id"]
+        first_name = user["first_name"] or "Trader"
+        flow_type = user["flow_type"]
+        reminder_num = user["reminder_count"] + 1
+
+        # Build remind message based on flow type
+
+        flow_messages = {
+            "beginners": f"📗 your *{LABEL_BEGINNERS}* registration",
+            "advanced": f"📚 your *{LABEL_ADVANCED}* registration",
+            "swing": f"📉 your *{LABEL_SWING}* access",
+            "vip_one_on_one": f"💎 your *One-on-One VIP Mentorship* booking",
+            "vip_group": f"💎 your *Group VIP Mentorship* booking",
+            "vip_signal": f"📈 your *VIP Signal* subscription",
+            "different_broker": f"🔄 your *broker subscription* signup",
+        }
+
+        flow_label = flow_messages.get(flow_type, "your registration")
+
+        try:
+            await bot.send_message(
+                chat_id=telegram_id,
+                text=(
+                    f"👋 Hey {first_name}!\n\n"
+                    f"You started {flow_label} but didn't finish. 😊\n\n"
+                    f"Tap below to pick up where you left off — "
+                    f"it only takes a minute to complete! 🚀"
+                ),
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "▶️ Continue", callback_data="main_menu"
+                            )
+                        ],
+                        [InlineKeyboardButton("🆘 Need Help?", url=MENTOR_CONTACT)],
+                    ]
+                ),
+            )
+            mark_reminded(telegram_id)
+            logger.info(
+                "reminder_sent",
+                telegram_id=telegram_id,
+                flow=flow_type,
+                reminder_num=reminder_num,
+            )
+
+            # Stope after 3 reminders
+            if reminder_num >= 20:
+                clear_incomplete_flow(telegram_id)
+                logger.info("reminder_limit_reached", telegram_id=telegram_id)
+
+        except TelegramError as e:
+            logger.error("reminder_failed", telegram_id=telegram_id, error=str(e))
+            # if user blocked the bot, clear their record
+            if "blocked" in str(e).lower() or "deactivated" in str(e).lower():
+                clear_incomplete_flow(telegram_id)
+
+        await asyncio.sleep(0.3)
+    logger.info("reminder_check_complete", sent=len(users))

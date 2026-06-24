@@ -56,6 +56,16 @@ def init_db() -> None:
                 is_active       INTEGER,
                 checked_at      TEXT DEFAULT (datetime('now'))
             );
+            
+            CREATE TABLE IF NOT EXISTS incomplete_flows (
+                telegram_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                flow_type TEXT,
+                started_at TEXT DEFAULT (datetime('now')),
+                last_reminded TEXT,
+                reminder_count INTEGER DEFAULT 0
+            );
         """)
     logger.info("db_initialized", path=DB_PATH)
 
@@ -263,3 +273,63 @@ def count_recent_attempts(telegram_id: int, minutes: int = 10) -> int:
             (telegram_id, f"-{minutes}"),
         ).fetchone()
         return row["cnt"] if row else 0
+
+
+# -- Incomplete flow tracking --------------------------------------------
+
+
+def save_incomplete_flow(
+    telegram_id: int,
+    username: str | None,
+    first_name: str | None,
+    flow_type: str,
+) -> None:
+    """Record that a user started a flow but hasn't completed it."""
+
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO incomplete_flows (telegram_id, username, first_name, started_at, reminder_count)
+        VALUES (?, ?, ?, ?, datetime('now'), 0)
+        ON CONFLICT(telegram_id) DO UPDATE SET
+            flow_type   = excluded.flow_type,
+            started_at  = excluded.started_at,
+            reminder_count   = 0,
+            laste_reminder   = NULL
+        """,
+            (telegram_id, username, first_name, flow_type),
+        )
+
+
+def clear_incomplete_flow(telegram_id: int) -> None:
+    """Remove incomplete flow record when user completes or cancels."""
+    with _get_conn() as conn:
+        conn.execute("DELETE FROM incomplete_flows WHERE telegram_id = ?", telegram_id)
+
+
+def get_users_to_remind(hours: int = 2) -> list[sqlite3.Row]:
+    """Return users who started a flow but haven't completed it
+    and haven't been reminded in the last N hours."""
+    with _get_conn() as conn:
+        return conn.execute(f"""
+            SELECT * FROM incomplete_flows WHERE reminder_count < 3
+                AND (
+                    last_reminded IS NULL
+                    OR datetime(last_reminded, '+{hours} hours') <= datetime('now')
+                    )
+            """).fetchall()
+
+
+def mark_reminded(telegram_id: int) -> None:
+    """Update last reminded time and increment counter."""
+
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE incomplete_flows
+            SET last_reminded = datetime('now'),
+                reminder_count = reminder_count + 1
+            WHERE telegram_id = ?
+        """,
+            (telegram_id),
+        )

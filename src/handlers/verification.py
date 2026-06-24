@@ -46,7 +46,13 @@ from src.core.settings import (
 )
 
 from src.core.logging import logger
-from src.db.database import save_verification, log_failed_attempt, get_user
+from src.db.database import (
+    save_verification,
+    log_failed_attempt,
+    get_user,
+    save_incomplete_flow,
+    clear_incomplete_flow,
+)
 from src.middleware.rate_limit import is_rate_limited
 from src.handlers.admin import (
     notify_admin,
@@ -85,6 +91,12 @@ async def beginners_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     await query.answer()
     context.user_data[MENTORSHIP_KEY] = "beginners"
+    save_incomplete_flow(
+        query.from_user.id,
+        query.from_user.username,
+        query.from_user.first_name,
+        "beginners",
+    )
 
     # Check if already verified
     db_user = get_user(query.from_user.id)
@@ -118,6 +130,12 @@ async def advanced_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     query = update.callback_query
     await query.answer()
     context.user_data[MENTORSHIP_KEY] = "advanced"
+    save_incomplete_flow(
+        query.from_user.id,
+        query.from_user.username,
+        query.from_user.first_name,
+        "advanced",
+    )
 
     db_user = get_user(query.from_user.id)
     if (
@@ -149,6 +167,12 @@ async def swing_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     query = update.callback_query
     await query.answer()
     context.user_data[MENTORSHIP_KEY] = "swing"
+    save_incomplete_flow(
+        query.from_user.id,
+        query.from_user.username,
+        query.from_user.first_name,
+        "swing",
+    )
 
     db_user = get_user(query.from_user.id)
     if db_user and db_user["verified_email"] and db_user["mentorship_type"] == "swing":
@@ -284,6 +308,7 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
         # Save to DB
         save_verification(user.id, email, mentorship)
+        clear_incomplete_flow(user.id)
 
         # Notify admin
         await notify_admin(
@@ -608,6 +633,12 @@ async def vip_package_selected(
         package_price = VIP_GROUP_PRICE
 
     context.user_data["vip_package_key"] = package_key
+    save_incomplete_flow(
+        query.from_user.id,
+        query.from_user.username,
+        query.from_user.first_name,
+        package_key,
+    )
     context.user_data["vip_package_label"] = package_label
     context.user_data["vip_package_price"] = package_price
 
@@ -727,7 +758,7 @@ async def receive_vip_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard_buttons),
     )
-
+    clear_incomplete_flow(id)
     return ConversationHandler.END
 
 
@@ -772,6 +803,13 @@ async def broker_subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """User taps Subscribe - collect their name."""
     query = update.callback_query
     await query.answer()
+
+    save_incomplete_flow(
+        query.from_user.id,
+        query.from_user.username,
+        query.from_user.first_name,
+        "different_broker",
+    )
 
     await query.edit_message_text(
         (
@@ -859,7 +897,7 @@ async def receive_broker_phone(
         parse_mode="Markdown",
         reply_markup=different_broker_payment(),
     )
-
+    clear_incomplete_flow(user.id)
     return ConversationHandler.END
 
 
@@ -955,6 +993,12 @@ async def signal_package_selected(
 
     # Store details in session memory for the final step
     context.user_data[SIGNAL_PACKAGE_KEY] = package_label
+    save_incomplete_flow(
+        query.from_user.id,
+        query.from_user.username,
+        query.from_user.first_name,
+        "vip_signal",
+    )
     context.user_data["signal_package_price"] = package_price
 
     # 3. Edit message to display Package, Price, and request Full Name
@@ -1054,6 +1098,7 @@ async def receive_signal_phone(
         parse_mode="Markdown",
         reply_markup=signal_payment_proof(),
     ),
+    clear_incomplete_flow(user.id)
     return ConversationHandler.END
 
 
@@ -1061,6 +1106,8 @@ async def receive_signal_phone(
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.effective_user:
+        clear_incomplete_flow(update.effective_user.id)
     await update.message.reply_text(
         "No problem! Tap /start whenever you're ready. 😊",
         reply_markup=main_menu(),
