@@ -183,7 +183,7 @@ def mark_removed(telegram_id: int) -> None:
             UPDATE users
             SET removed = 1,
                 verified_email = NULL,
-                warning_sent_at = NULL,
+                warning_sent_at = NULL
             WHERE telegram_id = ?
         """,
             (telegram_id,),
@@ -285,17 +285,16 @@ def save_incomplete_flow(
     flow_type: str,
 ) -> None:
     """Record that a user started a flow but hasn't completed it."""
-
     with _get_conn() as conn:
         conn.execute(
             """
-            INSERT INTO incomplete_flows (telegram_id, username, first_name, started_at, reminder_count)
-        VALUES (?, ?, ?, datetime('now'), 0)
-        ON CONFLICT(telegram_id) DO UPDATE SET
-            flow_type   = excluded.flow_type,
-            started_at  = excluded.started_at,
-            reminder_count   = 0,
-            last_reminder   = NULL
+            INSERT INTO incomplete_flows (telegram_id, username, first_name, flow_type, started_at, reminder_count)
+            VALUES (?, ?, ?, ?, datetime('now'), 0)
+            ON CONFLICT(telegram_id) DO UPDATE SET
+                flow_type       = excluded.flow_type,
+                started_at      = excluded.started_at,
+                reminder_count  = 0,
+                last_reminded   = NULL
         """,
             (telegram_id, username, first_name, flow_type),
         )
@@ -304,7 +303,9 @@ def save_incomplete_flow(
 def clear_incomplete_flow(telegram_id: int) -> None:
     """Remove incomplete flow record when user completes or cancels."""
     with _get_conn() as conn:
-        conn.execute("DELETE FROM incomplete_flows WHERE telegram_id = ?", telegram_id)
+        conn.execute(
+            "DELETE FROM incomplete_flows WHERE telegram_id = ?", (telegram_id,)
+        )
 
 
 def get_users_to_remind(hours: int = 2) -> list[sqlite3.Row]:
@@ -322,7 +323,6 @@ def get_users_to_remind(hours: int = 2) -> list[sqlite3.Row]:
 
 def mark_reminded(telegram_id: int) -> None:
     """Update last reminded time and increment counter."""
-
     with _get_conn() as conn:
         conn.execute(
             """
@@ -331,5 +331,5 @@ def mark_reminded(telegram_id: int) -> None:
                 reminder_count = reminder_count + 1
             WHERE telegram_id = ?
         """,
-            (telegram_id),
+            (telegram_id,),
         )
