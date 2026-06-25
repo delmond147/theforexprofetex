@@ -308,12 +308,17 @@ def clear_incomplete_flow(telegram_id: int) -> None:
         )
 
 
-def get_users_to_remind(hours: int = 2) -> list[sqlite3.Row]:
-    """Return users who started a flow but haven't completed it
-    and haven't been reminded in the last N hours."""
+def get_users_to_remind(hours: int = 4, max_reminders: int = 42) -> list[sqlite3.Row]:
+    """
+    Return users due for a reminder.
+    Default: every 4 hours for 7 days (42 reminders max).
+    Also stops if flow was started more than 7 days ago.
+    """
     with _get_conn() as conn:
         return conn.execute(f"""
-            SELECT * FROM incomplete_flows WHERE reminder_count < 3
+            SELECT * FROM incomplete_flows 
+            WHERE reminder_count < {max_reminders}
+                AND datetime(started_at, '+7 days') > datetime('now')
                 AND (
                     last_reminded IS NULL
                     OR datetime(last_reminded, '+{hours} hours') <= datetime('now')

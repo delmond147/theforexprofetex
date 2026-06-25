@@ -253,9 +253,9 @@ async def run_activity_check(bot: Bot) -> None:
 
 async def run_reminder_check(bot: Bot) -> None:
     """
-    Runs every 2 hours.
+    Runs every 4 hours.
     sends reminder message to users who started but didn't complete a flow.
-    stops after 3 reminders per flow.
+    stops after 42 reminders per flow.
     """
 
     from src.db.database import (
@@ -317,8 +317,19 @@ async def run_reminder_check(bot: Bot) -> None:
                 reminder_num=reminder_num,
             )
 
-            # Stope after 3 reminders
-            if reminder_num >= 20:
+            # Stope after 42 reminders (7 days at every 4 hours)
+            if reminder_num >= 42:
+                try:
+                    await bot.send_message(
+                        chat_id=telegram_id,
+                        text=(
+                            f"👋 Hey {first_name}, this is our last reminder.\n\n"
+                            f"Whenever you're ready to join, just tap /start "
+                            f"and we'll be right here. 😊📈"
+                        ),
+                    )
+                except TelegramError:
+                    pass
                 clear_incomplete_flow(telegram_id)
                 logger.info("reminder_limit_reached", telegram_id=telegram_id)
 
