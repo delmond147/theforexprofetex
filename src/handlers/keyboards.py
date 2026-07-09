@@ -19,6 +19,9 @@ from src.core.settings import (
     DIFFERENT_BROKER_PRICE,
     VIP_ONE_ON_ONE_PRICE,
     VIP_GROUP_PRICE,
+    PAYMENT_METHOD_1_NAME,
+    PAYMENT_METHOD_2_NAME,
+    PAYMENT_METHOD_3_NAME,
 )
 
 
@@ -250,6 +253,30 @@ def vip_mentorship_packages() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     f"👥 Group Mentorship — {VIP_GROUP_PRICE}",
                     callback_data="vip_group",
+                )
+            ],
+            [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")],
+        ]
+    )
+
+
+def vip_payment_methods() -> InlineKeyboardMarkup:
+    """VIP Mentorship payment method selection."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    f"💳 {PAYMENT_METHOD_1_NAME}", callback_data="vip_payment_method_1"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    f"💵 {PAYMENT_METHOD_2_NAME}", callback_data="vip_payment_method_2"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    f"🏦 {PAYMENT_METHOD_3_NAME}", callback_data="vip_payment_method_3"
                 )
             ],
             [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")],

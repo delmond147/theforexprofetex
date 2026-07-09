@@ -106,3 +106,18 @@ LABEL_INNER_CIRCLE: str = os.environ.get("LABEL_INNER_CIRCLE", "Inner Circle Com
 LABEL_DIFFERENT_BROKER: str = os.environ.get(
     "LABEL_DIFFERENT_BROKER", "Using Different Broker?"
 )
+
+# ── VIP Mentorship Payment Methods ────────────────────────────────────────────
+PAYMENT_METHOD_1_NAME: str = os.environ.get("PAYMENT_METHOD_1_NAME", "Bank Transfer")
+PAYMENT_METHOD_1_DETAILS: str = os.environ.get(
+    "PAYMENT_METHOD_1_DETAILS",
+    "Bank: Your Bank\nAccount Name: Your Name\nAccount Number: 0000000000",
+)
+PAYMENT_METHOD_2_NAME: str = os.environ.get("PAYMENT_METHOD_2_NAME", "Mobile Money")
+PAYMENT_METHOD_2_DETAILS: str = os.environ.get(
+    "PAYMENT_METHOD_2_DETAILS", "Network: MTN\nNumber: 0000000000\nName: Your Name"
+)
+PAYMENT_METHOD_3_NAME: str = os.environ.get("PAYMENT_METHOD_3_NAME", "Crypto (USDT)")
+PAYMENT_METHOD_3_DETAILS: str = os.environ.get(
+    "PAYMENT_METHOD_3_DETAILS", "Network: TRC20\nWallet: 0x0000000000000000000000"
+)

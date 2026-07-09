@@ -56,6 +56,8 @@ from src.handlers.verification import (
     signal_package_selected,
     receive_signal_name,
     receive_signal_phone,
+    receive_vip_payment_method,
+    AWAITING_VIP_PAYMENT_METHOD,
     cancel,
     AWAITING_EMAIL,
     AWAITING_REVERIFY_EMAIL,
@@ -215,6 +217,12 @@ def build_app() -> Application:
             ],
             AWAITING_VIP_PHONE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_vip_phone)
+            ],
+            AWAITING_VIP_PAYMENT_METHOD: [
+                CallbackQueryHandler(
+                    receive_vip_payment_method,
+                    pattern="^vip_payment_method_(1|2|3)$",
+                )
             ],
         },
         fallbacks=[

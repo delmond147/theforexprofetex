@@ -23,6 +23,7 @@ from src.handlers.keyboards import (
     signal_payment_proof,
     different_broker_payment,
     vip_mentorship_packages,
+    vip_payment_methods,
 )
 
 from src.core.settings import (
@@ -43,6 +44,12 @@ from src.core.settings import (
     VIP_GROUP_PRICE,
     VIP_ONE_ON_ONE_PAYMENT_LINK,
     VIP_GROUP_PAYMENT_LINK,
+    PAYMENT_METHOD_1_NAME,
+    PAYMENT_METHOD_1_DETAILS,
+    PAYMENT_METHOD_2_NAME,
+    PAYMENT_METHOD_2_DETAILS,
+    PAYMENT_METHOD_3_NAME,
+    PAYMENT_METHOD_3_DETAILS,
 )
 
 from src.core.logging import logger
@@ -70,6 +77,7 @@ AWAITING_BROKER_NAME = 5
 AWAITING_BROKER_PHONE = 6
 AWAITING_VIP_NAME = 7
 AWAITING_VIP_PHONE = 8
+AWAITING_VIP_PAYMENT_METHOD = 9
 
 # Configuration Key Constants
 MENTORSHIP_KEY = "mentorship_type"
@@ -700,6 +708,9 @@ async def receive_vip_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     package_price = context.user_data.get("vip_package_price", "N/A")
     package_key = context.user_data.get("vip_package_key", "")
 
+    # Store phone number for later use
+    context.user_data["vip_phone"] = phone
+
     logger.info(
         "vip_mentorship_request",
         user_id=user.id,
@@ -722,43 +733,87 @@ async def receive_vip_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         ),
     )
 
-    # Determine payment link based on package
-    if package_key == "vip_one_on_one":
-        payment_link = VIP_ONE_ON_ONE_PAYMENT_LINK
-    else:
-        payment_link = VIP_GROUP_PAYMENT_LINK
-
-    # Build reply keyboard
-    keyboard_buttons = []
-    if payment_link:
-        keyboard_buttons.append(
-            [InlineKeyboardButton("💳 Proceed to Payment", url=payment_link)]
-        )
-    keyboard_buttons.append(
-        [InlineKeyboardButton("📩 Contact Mentor", url=MENTOR_CONTACT)]
-    )
-    keyboard_buttons.append(
-        [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]
-    )
-
+    # Ask user to select a payment method
     await update.message.reply_text(
         (
-            "✅ *Thanks {name}! You're one step away.*\n\n"
+            "✅ *Got it, {name}!*\n\n"
             "📦 *Package:* {package_label}\n"
             "💰 *Price:* {package_price}\n\n"
-            "Tap below to proceed with your payment. "
-            "Once done, contact {MENTOR_NAME} directly to confirm "
-            "and get onboarded. 🎉"
+            "How would you like to make your payment? "
+            "Choose a method below 👇"
         ).format(
             name=name,
+            package_label=package_label,
+            package_price=package_price,
+        ),
+        parse_mode="Markdown",
+        reply_markup=vip_payment_methods(),
+    )
+    return AWAITING_VIP_PAYMENT_METHOD
+
+
+async def receive_vip_payment_method(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """User selected a payment method — show payment details."""
+    query = update.callback_query
+    await query.answer()
+    user = query.from_user
+
+    method_key = query.data  # "pay_method_1", "pay_method_2", "pay_method_3"
+
+    payment_methods = {
+        "pay_method_1": (PAYMENT_METHOD_1_NAME, PAYMENT_METHOD_1_DETAILS),
+        "pay_method_2": (PAYMENT_METHOD_2_NAME, PAYMENT_METHOD_2_DETAILS),
+        "pay_method_3": (PAYMENT_METHOD_3_NAME, PAYMENT_METHOD_3_DETAILS),
+    }
+
+    method_name, method_details = payment_methods.get(
+        method_key, ("Unknown", "Please contact support.")
+    )
+
+    name = context.user_data.get("vip_name", "N/A")
+    package_label = context.user_data.get("vip_package_label", "N/A")
+    package_price = context.user_data.get("vip_package_price", "N/A")
+
+    # Notify admin of chosen payment method
+    await notify_admin(
+        context.bot,
+        (
+            "💳 *VIP Payment Method Selected*\n\n"
+            f"👤 {name} (@{user.username or 'no username'})\n"
+            f"📦 {package_label} — {package_price}\n"
+            f"💳 Method: {method_name}\n\n"
+            "_Awaiting payment proof._"
+        ),
+    )
+
+    clear_incomplete_flow(user.id)
+
+    await query.edit_message_text(
+        (
+            "💳 *{method_name} Payment Details*\n\n"
+            "{method_details}\n\n"
+            "📦 *Package:* {package_label}\n"
+            "💰 *Amount:* {package_price}\n\n"
+            "Once payment is made, send your proof to {MENTOR_NAME} "
+            "to get onboarded. 🎉"
+        ).format(
+            method_name=method_name,
+            method_details=method_details,
             package_label=package_label,
             package_price=package_price,
             MENTOR_NAME=MENTOR_NAME,
         ),
         parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard_buttons),
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("📩 Send Payment Proof", url=MENTOR_CONTACT)],
+                [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")],
+            ]
+        ),
     )
-    clear_incomplete_flow(id)
+
     return ConversationHandler.END
 
 

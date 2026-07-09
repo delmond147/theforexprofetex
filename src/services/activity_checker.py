@@ -265,7 +265,7 @@ async def run_reminder_check(bot: Bot) -> None:
     )
     from src.core.settings import MENTOR_NAME, MENTOR_CONTACT
 
-    users = get_users_to_remind(hours=2)
+    users = get_users_to_remind(hours=4)
     logger.info("reminder_check_started", count=len(users))
 
     for user in users:
