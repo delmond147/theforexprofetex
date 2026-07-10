@@ -107,17 +107,34 @@ LABEL_DIFFERENT_BROKER: str = os.environ.get(
     "LABEL_DIFFERENT_BROKER", "Using Different Broker?"
 )
 
-# ── VIP Mentorship Payment Methods ────────────────────────────────────────────
+# ── Payment Method 1 — Bank Transfer ─────────────────────────────────────────
 PAYMENT_METHOD_1_NAME: str = os.environ.get("PAYMENT_METHOD_1_NAME", "Bank Transfer")
-PAYMENT_METHOD_1_DETAILS: str = os.environ.get(
-    "PAYMENT_METHOD_1_DETAILS",
-    "Bank: Your Bank\nAccount Name: Your Name\nAccount Number: 0000000000",
+PAYMENT_METHOD_1_BANK: str = os.environ.get("PAYMENT_METHOD_1_BANK", "Your Bank Name")
+PAYMENT_METHOD_1_ACCOUNT_NAME: str = os.environ.get(
+    "PAYMENT_METHOD_1_ACCOUNT_NAME", "Your Name"
 )
+PAYMENT_METHOD_1_ACCOUNT_NUMBER: str = os.environ.get(
+    "PAYMENT_METHOD_1_ACCOUNT_NUMBER", "0000000000"
+)
+
+# ── Payment Method 2 — Mobile Money ──────────────────────────────────────────
 PAYMENT_METHOD_2_NAME: str = os.environ.get("PAYMENT_METHOD_2_NAME", "Mobile Money")
-PAYMENT_METHOD_2_DETAILS: str = os.environ.get(
-    "PAYMENT_METHOD_2_DETAILS", "Network: MTN\nNumber: 0000000000\nName: Your Name"
+PAYMENT_METHOD_2_NETWORK: str = os.environ.get("PAYMENT_METHOD_2_NETWORK", "MTN")
+PAYMENT_METHOD_2_NUMBER: str = os.environ.get("PAYMENT_METHOD_2_NUMBER", "0000000000")
+PAYMENT_METHOD_2_ACCOUNT_NAME: str = os.environ.get(
+    "PAYMENT_METHOD_2_ACCOUNT_NAME", "Your Name"
 )
+
+# ── Payment Method 3 — Crypto ─────────────────────────────────────────────────
 PAYMENT_METHOD_3_NAME: str = os.environ.get("PAYMENT_METHOD_3_NAME", "Crypto (USDT)")
-PAYMENT_METHOD_3_DETAILS: str = os.environ.get(
-    "PAYMENT_METHOD_3_DETAILS", "Network: TRC20\nWallet: 0x0000000000000000000000"
+PAYMENT_METHOD_3_NETWORK: str = os.environ.get("PAYMENT_METHOD_3_NETWORK", "TRC20")
+PAYMENT_METHOD_3_WALLET: str = os.environ.get(
+    "PAYMENT_METHOD_3_WALLET", "Your Wallet Address"
+)
+
+# ── Payment Method 4 — Crypto ─────────────────────────────────────────────────
+PAYMENT_METHOD_4_NAME: str = os.environ.get("PAYMENT_METHOD_4_NAME", "Crypto (USDT)")
+PAYMENT_METHOD_4_NETWORK: str = os.environ.get("PAYMENT_METHOD_4_NETWORK", "TRC20")
+PAYMENT_METHOD_4_WALLET: str = os.environ.get(
+    "PAYMENT_METHOD_4_WALLET", "Your Wallet Address"
 )

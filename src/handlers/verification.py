@@ -42,14 +42,17 @@ from src.core.settings import (
     DIFFERENT_BROKER_PRICE,
     VIP_ONE_ON_ONE_PRICE,
     VIP_GROUP_PRICE,
-    VIP_ONE_ON_ONE_PAYMENT_LINK,
-    VIP_GROUP_PAYMENT_LINK,
     PAYMENT_METHOD_1_NAME,
-    PAYMENT_METHOD_1_DETAILS,
+    PAYMENT_METHOD_1_BANK,
+    PAYMENT_METHOD_1_ACCOUNT_NAME,
+    PAYMENT_METHOD_1_ACCOUNT_NUMBER,
     PAYMENT_METHOD_2_NAME,
-    PAYMENT_METHOD_2_DETAILS,
+    PAYMENT_METHOD_2_NETWORK,
+    PAYMENT_METHOD_2_NUMBER,
+    PAYMENT_METHOD_2_ACCOUNT_NAME,
     PAYMENT_METHOD_3_NAME,
-    PAYMENT_METHOD_3_DETAILS,
+    PAYMENT_METHOD_3_NETWORK,
+    PAYMENT_METHOD_3_WALLET,
 )
 
 from src.core.logging import logger
@@ -752,36 +755,54 @@ async def receive_vip_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return AWAITING_VIP_PAYMENT_METHOD
 
 
+# ── Receive VIP payment method ───────────────────────────────────────────────
 async def receive_vip_payment_method(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    """User selected a payment method — show payment details."""
+    """User selected a payment method — send each detail as a copyable field."""
     query = update.callback_query
-    logger.info(
-        "vip_payment_method_received", data=query.data, user_data=str(context.user_data)
-    )
     await query.answer()
     user = query.from_user
 
-    method_key = (
-        query.data
-    )  # "vip_payment_method_1", "vip_payment_method_2", "vip_payment_method_3"
-
-    payment_methods = {
-        "vip_payment_method_1": (PAYMENT_METHOD_1_NAME, PAYMENT_METHOD_1_DETAILS),
-        "vip_payment_method_2": (PAYMENT_METHOD_2_NAME, PAYMENT_METHOD_2_DETAILS),
-        "vip_payment_method_3": (PAYMENT_METHOD_3_NAME, PAYMENT_METHOD_3_DETAILS),
-    }
-
-    method_name, method_details = payment_methods.get(
-        method_key, ("Unknown", "Please contact support.")
-    )
-
+    method_key = query.data
     name = context.user_data.get("vip_name", "N/A")
     package_label = context.user_data.get("vip_package_label", "N/A")
     package_price = context.user_data.get("vip_package_price", "N/A")
+    chat_id = query.message.chat_id
 
-    # Notify admin of chosen payment method
+    # ── Build payment details based on chosen method ──────────────────────────
+
+    if method_key == "vip_payment_method_1":
+        method_name = PAYMENT_METHOD_1_NAME
+        fields = [
+            ("🏦 Bank", PAYMENT_METHOD_1_BANK),
+            ("👤 Account Name", PAYMENT_METHOD_1_ACCOUNT_NAME),
+            ("🔢 Account Number", PAYMENT_METHOD_1_ACCOUNT_NUMBER),
+        ]
+
+    elif method_key == "vip_payment_method_2":
+        method_name = PAYMENT_METHOD_2_NAME
+        fields = [
+            ("📡 Network", PAYMENT_METHOD_2_NETWORK),
+            ("👤 Name", PAYMENT_METHOD_2_ACCOUNT_NAME),
+            ("📱 Number", PAYMENT_METHOD_2_NUMBER),
+        ]
+
+    elif method_key == "vip_payment_method_3":
+        method_name = PAYMENT_METHOD_3_NAME
+        fields = [
+            ("🌐 Network", PAYMENT_METHOD_3_NETWORK),
+            ("🪙 Wallet Address", PAYMENT_METHOD_3_WALLET),
+        ]
+
+    else:
+        await query.edit_message_text(
+            "⚠️ Invalid payment method. Please try again.",
+            reply_markup=vip_payment_methods(),
+        )
+        return AWAITING_VIP_PAYMENT_METHOD
+
+    # Notify admin
     await notify_admin(
         context.bot,
         (
@@ -795,20 +816,43 @@ async def receive_vip_payment_method(
 
     clear_incomplete_flow(user.id)
 
+    # ── Step 1: Edit current message with header ──────────────────────────────
     await query.edit_message_text(
         (
             "💳 *{method_name} Payment Details*\n\n"
-            "{method_details}\n\n"
             "📦 *Package:* {package_label}\n"
             "💰 *Amount:* {package_price}\n\n"
-            "Once payment is made, send your proof to {MENTOR_NAME} "
-            "to get onboarded. 🎉"
+            "Tap any value below to copy it instantly 👇"
         ).format(
             method_name=method_name,
-            method_details=method_details,
             package_label=package_label,
             package_price=package_price,
-            MENTOR_NAME=MENTOR_NAME,
+        ),
+        parse_mode="Markdown",
+    )
+
+    # ── Step 2: Send each field as a separate copyable message ───────────────
+    for label, value in fields:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"{label}\n`{value}`",
+            parse_mode="Markdown",
+        )
+        await asyncio.sleep(0.3)
+
+    # ── Step 3: Send amount as copyable field ─────────────────────────────────
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"💰 Amount\n`{package_price}`",
+        parse_mode="Markdown",
+    )
+
+    # ── Step 4: Final message with proof button ───────────────────────────────
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=(
+            "✅ Once payment is made, tap below to send your proof to "
+            f"*{MENTOR_NAME}*. You'll be onboarded within 24 hours. 🎉"
         ),
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(
