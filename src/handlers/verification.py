@@ -757,15 +757,20 @@ async def receive_vip_payment_method(
 ) -> int:
     """User selected a payment method — show payment details."""
     query = update.callback_query
+    logger.info(
+        "vip_payment_method_received", data=query.data, user_data=str(context.user_data)
+    )
     await query.answer()
     user = query.from_user
 
-    method_key = query.data  # "pay_method_1", "pay_method_2", "pay_method_3"
+    method_key = (
+        query.data
+    )  # "vip_payment_method_1", "vip_payment_method_2", "vip_payment_method_3"
 
     payment_methods = {
-        "pay_method_1": (PAYMENT_METHOD_1_NAME, PAYMENT_METHOD_1_DETAILS),
-        "pay_method_2": (PAYMENT_METHOD_2_NAME, PAYMENT_METHOD_2_DETAILS),
-        "pay_method_3": (PAYMENT_METHOD_3_NAME, PAYMENT_METHOD_3_DETAILS),
+        "vip_payment_method_1": (PAYMENT_METHOD_1_NAME, PAYMENT_METHOD_1_DETAILS),
+        "vip_payment_method_2": (PAYMENT_METHOD_2_NAME, PAYMENT_METHOD_2_DETAILS),
+        "vip_payment_method_3": (PAYMENT_METHOD_3_NAME, PAYMENT_METHOD_3_DETAILS),
     }
 
     method_name, method_details = payment_methods.get(
