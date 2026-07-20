@@ -134,6 +134,25 @@ def change_partner_guide() -> InlineKeyboardMarkup:
     )
 
 
+def pending_mt5_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "🔄 Check Funding Status", callback_data="check_mt5_status"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "🔗 Create Exness Account", url=PARTNER_LINK
+                )
+            ],
+            [InlineKeyboardButton("🆘 Get Support", url=MENTOR_CONTACT)],
+            [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")],
+        ]
+    )
+
+
 def verified_beginners() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [

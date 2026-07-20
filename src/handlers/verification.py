@@ -24,6 +24,7 @@ from src.handlers.keyboards import (
     different_broker_payment,
     vip_mentorship_packages,
     vip_payment_methods,
+    pending_mt5_keyboard,
 )
 
 from src.core.settings import (
@@ -53,6 +54,8 @@ from src.core.settings import (
     PAYMENT_METHOD_3_NAME,
     PAYMENT_METHOD_3_NETWORK,
     PAYMENT_METHOD_3_WALLET,
+    MT5_GRACE_DAYS,
+    MT5_MIN_DEPOSIT,
 )
 
 from src.core.logging import logger
@@ -62,6 +65,10 @@ from src.db.database import (
     get_user,
     save_incomplete_flow,
     clear_incomplete_flow,
+    save_pending_verification,
+    mark_mt5_verified,
+    set_mt5_pending,
+    set_mt5_verified,
 )
 from src.middleware.rate_limit import is_rate_limited
 from src.handlers.admin import (
@@ -87,6 +94,217 @@ MENTORSHIP_KEY = "mentorship_type"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+async def process_mt5_verification(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    telegram_id: int,
+    email: str,
+    mentorship: str,
+    query=None,
+) -> None:
+    """
+    Validates if the user has a real MT5 account under the partner link and it is funded.
+    """
+    user = update.effective_user
+    first_name = user.first_name if user else "Trader"
+    username = user.username if user else None
+
+    # Get accounts
+    accounts = await exness.get_client_accounts(email)
+
+    has_mt5 = False
+    is_funded = False
+    mt5_account_id = None
+
+    for acc in accounts:
+        platform = str(acc.get("platform", "")).lower()
+        if platform == "mt5":
+            has_mt5 = True
+            account_id = acc.get("client_account")
+            if not mt5_account_id:
+                mt5_account_id = account_id
+
+            try:
+                vol = float(acc.get("volume_lots", 0))
+                if vol > 0:
+                    is_funded = True
+                    mt5_account_id = account_id
+                    break
+            except (ValueError, TypeError):
+                pass
+
+    if has_mt5 and is_funded:
+        # Save full verification
+        save_verification(telegram_id, email, mentorship)
+        mark_mt5_verified(telegram_id, mt5_account_id)
+        clear_incomplete_flow(telegram_id)
+
+        # Notify admin
+        await notify_admin(
+            context.bot,
+            verified_message(first_name, username, email, mentorship),
+        )
+
+        if mentorship == "beginners":
+            group_word, success_kb, group_url = (
+                "Beginners",
+                verified_beginners(),
+                BEGINNERS_GROUP_LINK,
+            )
+        elif mentorship == "advanced":
+            group_word, success_kb, group_url = (
+                "EXNESS VIP SIGNALS",
+                verified_advanced(),
+                ADVANCED_GROUP_LINK,
+            )
+        else:
+            group_word, success_kb, group_url = (
+                "Swing Trading",
+                verified_swing(),
+                SWING_TRADING_LINK,
+            )
+
+        success_text = (
+            "✅ *Verified! Welcome to {MENTOR_NAME} {group_word} Mentorship!*\n\n"
+            "Your Exness account (`{email}`) is linked to {MENTOR_NAME}. 🎉\n\n"
+            "We found your MT5 account (`{mt5_account_id}`) and verified your activity!\n\n"
+            "Tap below to join your group and start learning!".format(
+                MENTOR_NAME=MENTOR_NAME,
+                group_word=group_word,
+                email=email,
+                mt5_account_id=mt5_account_id,
+            )
+        )
+
+        if query:
+            await query.edit_message_text(
+                success_text, parse_mode="Markdown", reply_markup=success_kb
+            )
+        else:
+            await update.message.reply_text(
+                success_text, parse_mode="Markdown", reply_markup=success_kb
+            )
+
+        # Onboarding follow-up after short delay
+        await asyncio.sleep(3)
+        msg_text = (
+            "🎯 *Quick start guide for you:*\n\n"
+            "1️⃣ Join your group using the button above\n"
+            "2️⃣ Read the 📌 pinned message in the group\n"
+            "3️⃣ Review the group rules and guidelines\n"
+            "4️⃣ Check the weekly class schedule\n\n"
+            "Any questions? We've got you covered 👇"
+        )
+        if query:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=msg_text,
+                parse_mode="Markdown",
+                reply_markup=onboarding(group_url),
+            )
+        else:
+            await update.message.reply_text(
+                msg_text,
+                parse_mode="Markdown",
+                reply_markup=onboarding(group_url),
+            )
+
+    else:
+        # Save pending verification
+        deadline_hours = MT5_GRACE_DAYS * 24
+        save_pending_verification(
+            telegram_id, email, mentorship, deadline_hours, mt5_account_id
+        )
+        clear_incomplete_flow(telegram_id)
+
+        # Calculate time remaining dynamically if checking again
+        db_user = get_user(telegram_id)
+        time_left_str = ""
+        if db_user and db_user.get("mt5_check_deadline"):
+            try:
+                from datetime import datetime, timezone
+
+                deadline_dt = datetime.fromisoformat(db_user["mt5_check_deadline"])
+                if deadline_dt.tzinfo is not None:
+                    now = datetime.now(timezone.utc)
+                else:
+                    now = datetime.utcnow()
+                diff = deadline_dt - now
+                if diff.total_seconds() > 0:
+                    hours = int(diff.total_seconds() // 3600)
+                    minutes = int((diff.total_seconds() % 3600) // 60)
+                    time_left_str = f"\n\n⏳ Time remaining: *{hours}h {minutes}m*"
+                else:
+                    time_left_str = "\n\n⌛ Deadline has expired. Please contact support or restart."
+            except Exception:
+                pass
+
+        if not has_mt5:
+            pending_text = (
+                "⚠️ *Affiliation Confirmed, but MT5 Account Missing!*\n\n"
+                f"Hi {first_name}! Your email `{email}` is linked under *{MENTOR_NAME}*, "
+                "but we couldn't find any **MT5** trading accounts under this email. 📉\n\n"
+                "To complete your registration and join the group, please:\n"
+                "1️⃣ Log in to Exness and create a **Real MT5 account**.\n"
+                "2️⃣ **Deposit funds** into your new MT5 account and make a trade.\n\n"
+                f"⏳ You have *{MT5_GRACE_DAYS} days* to fund your MT5 account, or this pending verification will expire.{time_left_str}\n\n"
+                "Once done, tap below to check your funding status again 👇"
+            )
+        else:
+            pending_text = (
+                "⚠️ *MT5 Account Not Funded!*\n\n"
+                f"Hi {first_name}! We found your MT5 account (`{mt5_account_id}`), "
+                "but it has not been funded or traded on yet. 💰\n\n"
+                f"To activate your access to the *{MENTOR_NAME}* VIP group, please **deposit funds** and place at least one trade on your MT5 account.\n\n"
+                f"⏳ You have *{MT5_GRACE_DAYS} days* to fund your account, or this pending verification will expire.{time_left_str}\n\n"
+                "Once funded, tap below to check status 👇"
+            )
+
+        if query:
+            # If query exists, we can notify with an alert that check failed
+            if "Check Funding Status" in str(
+                query.message.text or ""
+            ) or "Checking" in str(query.message.text or ""):
+                await query.answer("❌ Funding/MT5 not detected yet.", show_alert=True)
+            await query.edit_message_text(
+                pending_text, parse_mode="Markdown", reply_markup=pending_mt5_keyboard()
+            )
+        else:
+            await update.message.reply_text(
+                pending_text, parse_mode="Markdown", reply_markup=pending_mt5_keyboard()
+            )
+
+
+async def check_mt5_status_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    telegram_id = query.from_user.id
+    db_user = get_user(telegram_id)
+
+    if not db_user or not db_user["verified_email"]:
+        await query.edit_message_text(
+            "⚠️ You don't have a pending verification. Please restart with /start",
+            parse_mode="Markdown",
+            reply_markup=main_menu(),
+        )
+        return
+
+    email = db_user["verified_email"]
+    mentorship = db_user["mentorship_type"] or "beginners"
+
+    await process_mt5_verification(
+        update,
+        context,
+        telegram_id,
+        email,
+        mentorship,
+        query=query,
+    )
 
 
 async def _typing(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
@@ -316,82 +534,140 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     if client:
         logger.info("verify_success", user_id=user.id, email=email)
-
-        # Save to DB
         save_verification(user.id, email, mentorship)
         clear_incomplete_flow(user.id)
 
-        # Notify admin
-        await notify_admin(
-            context.bot,
-            verified_message(user.first_name, user.username, email, mentorship),
+        # ── MT5 + deposit check ───────────────────────────────────────────
+        await update.message.reply_text(
+            "✅ *Account verified under KellyBillaFx!*\n\n"
+            "⏳ Now checking your MT5 trading account...",
+            parse_mode="Markdown",
         )
 
-        if mentorship == "beginners":
-            group_word, success_kb, group_url = (
-                "Beginners",
-                verified_beginners(),
-                BEGINNERS_GROUP_LINK,
+        is_funded, mt5_account_id = await exness.check_mt5_funded(
+            email, min_deposit=MT5_MIN_DEPOSIT
+        )
+
+        if is_funded and mt5_account_id:
+            # ✅ MT5 account exists and is funded — full access
+            set_mt5_verified(user.id, mt5_account_id)
+
+            await notify_admin(
+                context.bot,
+                verified_message(user.first_name, user.username, email, mentorship),
             )
-        elif mentorship == "advanced":
-            group_word, success_kb, group_url = (
-                "EXNESS VIP SIGNALS",
-                verified_advanced(),
-                ADVANCED_GROUP_LINK,
+
+            if mentorship == "beginners":
+                group_word, success_kb, group_url = (
+                    LABEL_BEGINNERS,
+                    verified_beginners(),
+                    BEGINNERS_GROUP_LINK,
+                )
+            elif mentorship == "advanced":
+                group_word, success_kb, group_url = (
+                    LABEL_ADVANCED,
+                    verified_advanced(),
+                    ADVANCED_GROUP_LINK,
+                )
+            else:
+                group_word, success_kb, group_url = (
+                    LABEL_SWING,
+                    verified_swing(),
+                    SWING_TRADING_LINK,
+                )
+
+            await update.message.reply_text(
+                (
+                    "🎉 *All checks passed! Welcome to {MENTOR_NAME}!*\n\n"
+                    "✅ Exness account linked\n"
+                    "✅ MT5 account active\n"
+                    "✅ Deposit confirmed\n\n"
+                    "Tap below to join your group 👇"
+                ).format(MENTOR_NAME=MENTOR_NAME),
+                parse_mode="Markdown",
+                reply_markup=success_kb,
             )
+
+            await asyncio.sleep(3)
+            await update.message.reply_text(
+                "🎯 *Quick start guide:*\n\n"
+                "1️⃣ Join your group using the button above\n"
+                "2️⃣ Read the 📌 pinned message\n"
+                "3️⃣ Review the group rules\n"
+                "4️⃣ Check the weekly schedule\n\n"
+                "Any questions? We've got you covered 👇",
+                parse_mode="Markdown",
+                reply_markup=onboarding(group_url),
+            )
+
         else:
-            group_word, success_kb, group_url = (
-                "Swing Trading",
-                verified_swing(),
-                SWING_TRADING_LINK,
+            # ⏳ No funded MT5 yet — set grace period
+            deadline = (datetime.utcnow() + timedelta(days=MT5_GRACE_DAYS)).isoformat()
+            set_mt5_pending(user.id, deadline)
+
+            await notify_admin(
+                context.bot,
+                (
+                    "⏳ *Pending MT5 Verification*\n\n"
+                    f"👤 {user.first_name} (@{user.username or 'no username'})\n"
+                    f"📧 {email}\n"
+                    f"📋 Affiliation: ✅ Confirmed\n"
+                    f"💻 MT5 Account: ❌ Not found or not funded\n"
+                    f"⏰ Deadline: {MT5_GRACE_DAYS} days"
+                ),
             )
 
-        # FIXED: Added structural format engine parsing to ensure names render correctly
-        await update.message.reply_text(
-            "✅ *Verified! Welcome to {MENTOR_NAME} {group_word} Mentorship!*\n\n"
-            "Your Exness account (`{email}`) is linked to {MENTOR_NAME}. 🎉\n\n"
-            "Now login to your exness and create a new trading account\n\n"
-            "Deposit funds to trade my signals else you'll be kicked out of the group\n\n"
-            "Tap below to join your group and start learning!".format(
-                MENTOR_NAME=MENTOR_NAME, group_word=group_word, email=email
-            ),
-            parse_mode="Markdown",
-            reply_markup=success_kb,
-        )
+            # Check if MT5 exists but just not funded yet
+            accounts = await exness.get_client_accounts(email)
+            has_mt5 = any(a.get("platform", "").lower() == "mt5" for a in accounts)
 
-        # Onboarding follow-up after short delay
-        await asyncio.sleep(3)
-        await update.message.reply_text(
-            "🎯 *Quick start guide for you:*\n\n"
-            "1️⃣ Join your group using the button above\n"
-            "2️⃣ Read the 📌 pinned message in the group\n"
-            "3️⃣ Review the group rules and guidelines\n"
-            "4️⃣ Check the weekly class schedule\n\n"
-            "Any questions? We've got you covered 👇",
-            parse_mode="Markdown",
-            reply_markup=onboarding(group_url),
-        )
+            if has_mt5:
+                msg = (
+                    "✅ *Exness account verified!*\n\n"
+                    "⚠️ *Almost there!* We found your MT5 account but it "
+                    "doesn't have any trading activity yet.\n\n"
+                    "To complete your verification:\n"
+                    "1️⃣ Log into your Exness Personal Area\n"
+                    "2️⃣ Fund your MT5 account (minimum $10)\n"
+                    "3️⃣ Place at least one trade\n\n"
+                    f"⏰ You have *{MT5_GRACE_DAYS} days* to complete this.\n\n"
+                    "Once done, tap /start and go through verification again. 📈"
+                )
+            else:
+                msg = (
+                    "✅ *Exness account verified!*\n\n"
+                    "⚠️ *One more step required!* You need to create an "
+                    "MT5 trading account on Exness and make a deposit.\n\n"
+                    "Here's how:\n"
+                    "1️⃣ Log into your Exness Personal Area\n"
+                    "2️⃣ Go to *My Accounts → Create Account*\n"
+                    "3️⃣ Select *MT5* as the platform\n"
+                    "4️⃣ Fund your account (minimum *$10*)\n"
+                    "5️⃣ Place at least one trade\n\n"
+                    f"⏰ You have *{MT5_GRACE_DAYS} days* to complete this.\n\n"
+                    "Once done, tap /start and verify again. 📈"
+                )
 
-    else:
-        logger.info("verify_not_found", user_id=user.id, email=email)
-        log_failed_attempt(user.id, email)
-        context.user_data["last_email"] = email
-
-        # Notify admin of failed attempt
-        await notify_admin(
-            context.bot,
-            failed_verification_message(user.first_name, user.username, email),
-        )
-
-        # FIXED: Injected dynamic variable parsing for global multi-client tracking
-        await update.message.reply_text(
-            "🔍 We couldn't find `{email}` under {MENTOR_NAME}.\n\n"
-            "Do you already have an Exness account with this email?".format(
-                email=email, MENTOR_NAME=MENTOR_NAME
-            ),
-            parse_mode="Markdown",
-            reply_markup=account_not_found_options(),
-        )
+            await update.message.reply_text(
+                msg,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "🔗 Open Exness Personal Area",
+                                url="https://my.exness.com",
+                            )
+                        ],
+                        [InlineKeyboardButton("🆘 Get Support", url=MENTOR_CONTACT)],
+                        [
+                            InlineKeyboardButton(
+                                "🔙 Back to Menu", callback_data="main_menu"
+                            )
+                        ],
+                    ]
+                ),
+            )
 
     return ConversationHandler.END
 
@@ -442,52 +718,14 @@ async def reverify_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         if client:
             logger.info("reverify_success", user_id=user.id, email=last_email)
-            save_verification(user.id, last_email, mentorship)
-            await notify_admin(
-                context.bot,
-                verified_message(
-                    user.first_name, user.username, last_email, mentorship
-                ),
-            )
-            group_word = "Beginners" if mentorship == "beginners" else "Advanced"
-            group_url = (
-                BEGINNERS_GROUP_LINK
-                if mentorship == "beginners"
-                else ADVANCED_GROUP_LINK
-            )
-            success_kb = (
-                verified_beginners()
-                if mentorship == "beginners"
-                else verified_advanced()
-            )
             context.user_data.pop("last_email", None)
-
-            # FIXED: Formatted output mapping rules
-            await query.edit_message_text(
-                "✅ *All set! Welcome to {MENTOR_NAME} {group_word} Mentorship!*\n\n"
-                "`{last_email}` is now linked to {MENTOR_NAME}. 🎉\n\n"
-                "Tap below to join your group!".format(
-                    MENTOR_NAME=MENTOR_NAME,
-                    group_word=group_word,
-                    last_email=last_email,
-                ),
-                parse_mode="Markdown",
-                reply_markup=success_kb,
-            )
-
-            await asyncio.sleep(3)
-            await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=(
-                    "🎯 *Quick start guide for you:*\n\n"
-                    "1️⃣ Join your group using the button above\n"
-                    "2️⃣ Read the 📌 pinned message in the group\n"
-                    "3️⃣ Introduce yourself to the community\n"
-                    "4️⃣ Check the weekly class schedule\n\n"
-                    "Any questions? We've got you covered 👇"
-                ),
-                parse_mode="Markdown",
-                reply_markup=onboarding(group_url),
+            await process_mt5_verification(
+                update,
+                context,
+                user.id,
+                last_email,
+                mentorship,
+                query=query,
             )
         else:
             logger.info("reverify_still_not_linked", user_id=user.id, email=last_email)
@@ -534,38 +772,12 @@ async def receive_reverify_email(
 
     if client:
         logger.info("reverify_success", user_id=user.id, email=email)
-        save_verification(user.id, email, mentorship)
-        await notify_admin(
-            context.bot,
-            verified_message(user.first_name, user.username, email, mentorship),
-        )
-        group_word = "Beginners" if mentorship == "beginners" else "Advanced"
-        group_url = (
-            BEGINNERS_GROUP_LINK if mentorship == "beginners" else ADVANCED_GROUP_LINK
-        )
-        success_kb = (
-            verified_beginners() if mentorship == "beginners" else verified_advanced()
-        )
-
-        # FIXED: Swapped raw placeholders via explicit parsing calls
-        await update.message.reply_text(
-            "✅ *Verified! Welcome to {MENTOR_NAME} {group_word} Mentorship!*\n\n"
-            "Tap below to join your group! 🎉".format(
-                MENTOR_NAME=MENTOR_NAME, group_word=group_word
-            ),
-            parse_mode="Markdown",
-            reply_markup=success_kb,
-        )
-        await asyncio.sleep(3)
-        await update.message.reply_text(
-            "🎯 *Quick start guide for you:*\n\n"
-            "1️⃣ Join your group using the button above\n"
-            "2️⃣ Read the 📌 pinned message in the group\n"
-            "3️⃣ Introduce yourself to the community\n"
-            "4️⃣ Check the weekly class schedule\n\n"
-            "Any questions? We've got you covered 👇",
-            parse_mode="Markdown",
-            reply_markup=onboarding(group_url),
+        await process_mt5_verification(
+            update,
+            context,
+            user.id,
+            email,
+            mentorship,
         )
     else:
         context.user_data["last_email"] = email

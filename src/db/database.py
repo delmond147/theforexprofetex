@@ -31,7 +31,10 @@ def init_db() -> None:
                 joined_at       TEXT DEFAULT (datetime('now')),
                 last_active_check TEXT,
                 warning_sent_at TEXT,
-                removed         INTEGER DEFAULT 0
+                removed         INTEGER DEFAULT 0,
+                mt5_verified    INTEGER DEFAULT 0,
+                mt5_check_deadline TEXT,
+                mt5_account_id  TEXT
             );
 
             CREATE TABLE IF NOT EXISTS verification_attempts (
@@ -67,6 +70,18 @@ def init_db() -> None:
                 reminder_count INTEGER DEFAULT 0
             );
         """)
+
+        # Check if mt5 columns exist (for migration of existing databases)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "mt5_verified" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN mt5_verified INTEGER DEFAULT 0")
+        if "mt5_check_deadline" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN mt5_check_deadline TEXT")
+        if "mt5_account_id" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN mt5_account_id TEXT")
+
     logger.info("db_initialized", path=DB_PATH)
 
 
@@ -105,7 +120,9 @@ def save_verification(
                 mentorship_type = ?,
                 verified_at     = ?,
                 removed         = 0,
-                warning_sent_at = NULL
+                warning_sent_at = NULL,
+                mt5_verified    = 1,
+                mt5_check_deadline = NULL
             WHERE telegram_id = ?
         """,
             (email, mentorship_type, now, telegram_id),
@@ -183,11 +200,86 @@ def mark_removed(telegram_id: int) -> None:
             UPDATE users
             SET removed = 1,
                 verified_email = NULL,
-                warning_sent_at = NULL
+                warning_sent_at = NULL,
+                mt5_verified = 0,
+                mt5_check_deadline = NULL,
+                mt5_account_id = NULL
             WHERE telegram_id = ?
         """,
             (telegram_id,),
         )
+
+
+def save_pending_verification(
+    telegram_id: int,
+    email: str,
+    mentorship_type: str,
+    deadline_hours: int,
+    mt5_account_id: str | None = None,
+) -> None:
+    now = datetime.utcnow().isoformat()
+    from datetime import timedelta
+
+    deadline = (datetime.utcnow() + timedelta(hours=deadline_hours)).isoformat()
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE users
+            SET verified_email  = ?,
+                mentorship_type = ?,
+                verified_at     = ?,
+                removed         = 0,
+                warning_sent_at = NULL,
+                mt5_verified    = 0,
+                mt5_check_deadline = ?,
+                mt5_account_id = ?
+            WHERE telegram_id = ?
+        """,
+            (email, mentorship_type, now, deadline, mt5_account_id, telegram_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO verification_attempts (telegram_id, email, success)
+            VALUES (?, ?, 1)
+        """,
+            (telegram_id, email),
+        )
+
+
+def mark_mt5_verified(telegram_id: int, mt5_account_id: str | None = None) -> None:
+    with _get_conn() as conn:
+        if mt5_account_id:
+            conn.execute(
+                """
+                UPDATE users
+                SET mt5_verified = 1,
+                    mt5_check_deadline = NULL,
+                    mt5_account_id = ?
+                WHERE telegram_id = ?
+            """,
+                (mt5_account_id, telegram_id),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE users
+                SET mt5_verified = 1,
+                    mt5_check_deadline = NULL
+                WHERE telegram_id = ?
+            """,
+                (telegram_id,),
+            )
+
+
+def get_pending_mt5_users() -> list[sqlite3.Row]:
+    """Return all users who are pending MT5/deposit verification."""
+    with _get_conn() as conn:
+        return conn.execute("""
+            SELECT * FROM users
+            WHERE verified_email IS NOT NULL
+                AND mt5_verified = 0
+                AND removed = 0
+        """).fetchall()
 
 
 def mark_active(telegram_id: int, last_trade_date: str) -> None:
@@ -338,3 +430,97 @@ def mark_reminded(telegram_id: int) -> None:
         """,
             (telegram_id,),
         )
+
+
+# ── MT5 verification helpers ──────────────────────────────────────────────────
+
+
+def set_mt5_pending(telegram_id: int, deadline: str) -> None:
+    """Mark user as pending MT5 verification with a deadline."""
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE users
+            SET mt5_verified       = 0,
+                mt5_check_deadline = ?
+            WHERE telegram_id = ?
+        """,
+            (deadline, telegram_id),
+        )
+
+
+def set_mt5_verified(telegram_id: int, mt5_account_id: str) -> None:
+    """Mark user as having a funded MT5 account."""
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE users
+            SET mt5_verified    = 1,
+                mt5_account_id  = ?,
+                mt5_check_deadline = NULL
+            WHERE telegram_id = ?
+        """,
+            (mt5_account_id, telegram_id),
+        )
+
+
+def get_pending_mt5_users() -> list[sqlite3.Row]:
+    """Return users who are verified but pending MT5 + deposit check."""
+    with _get_conn() as conn:
+        return conn.execute("""
+            SELECT * FROM users
+            WHERE verified_email   IS NOT NULL
+              AND mt5_verified      = 0
+              AND mt5_check_deadline IS NOT NULL
+              AND removed           = 0
+        """).fetchall()
+
+
+def get_deadline_exceeded_mt5_users() -> list[sqlite3.Row]:
+    """Return users whose MT5 grace period has expired."""
+    with _get_conn() as conn:
+        return conn.execute("""
+            SELECT * FROM users
+            WHERE verified_email    IS NOT NULL
+              AND mt5_verified       = 0
+              AND mt5_check_deadline IS NOT NULL
+              AND removed            = 0
+              AND datetime(mt5_check_deadline) <= datetime('now')
+        """).fetchall()
+
+
+# ── Partner switch helpers ────────────────────────────────────────────────────
+
+
+def mark_partner_switch_warned(telegram_id: int) -> None:
+    """Record when a partner switch warning was sent."""
+    now = datetime.utcnow().isoformat()
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE users SET partner_switch_warned_at = ?
+            WHERE telegram_id = ?
+        """,
+            (now, telegram_id),
+        )
+
+
+def get_partner_switch_removal_due() -> list[sqlite3.Row]:
+    """Return users warned about partner switch whose 24h deadline has passed."""
+    with _get_conn() as conn:
+        return conn.execute("""
+            SELECT * FROM users
+            WHERE partner_switch_warned_at IS NOT NULL
+              AND removed = 0
+              AND datetime(partner_switch_warned_at, '+24 hours') <= datetime('now')
+        """).fetchall()
+
+
+def get_all_verified_users() -> list[sqlite3.Row]:
+    """Return all verified non-removed users for activity checking."""
+    with _get_conn() as conn:
+        return conn.execute("""
+            SELECT * FROM users
+            WHERE verified_email IS NOT NULL
+              AND removed = 0
+        """).fetchall()

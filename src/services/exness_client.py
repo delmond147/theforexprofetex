@@ -276,7 +276,7 @@ class ExnessClient:
                 )
 
             if resp.status_code in (400, 404):
-                return None
+                return {"affiliation": False}
 
             resp.raise_for_status()
             return resp.json()
@@ -309,21 +309,64 @@ class ExnessClient:
 
     # ── Other endpoints ───────────────────────────────────────────────────────
 
-    async def get_partner_info(self) -> dict | None:
-        data = await self._get("/v2/partner/account/")
-        if isinstance(data, list):
-            return data[0] if data else None
-        return data if isinstance(data, dict) else None
+    async def get_client_accounts(self, email: str) -> list[dict]:
+        """
+        Fetch all trading accounts for a client email.
+        GET /api/reports/clients/accounts/?search=email
 
-    async def get_campaigns(self) -> list[dict]:
-        data = await self._get("/v2/campaigns/")
+        Returns list of account dicts. Each dict contains:
+        - platform: "mt5" or "mt4"
+        - volume_lots: total lots traded (> 0 means funded and traded)
+        - client_account_created: date account was created
+        - client_account_last_trade: last trade date
+        - client_account: account number/ID
+        """
+        data = await self._get(
+            "/reports/clients/accounts/",
+            params={"search": email.strip(), "page_size": 50},
+        )
+        logger.info("client_accounts_response", email=email, data=str(data)[:300])
+
         if isinstance(data, dict):
-            return data.get("results") or data.get("data") or []
+            return data.get("data") or data.get("results") or []
         return data if isinstance(data, list) else []
 
-    # Added instance close method for cleanly managing server teardowns
-    async def close(self) -> None:
-        await self._client.aclose()
+    async def check_mt5_funded(
+        self, email: str, min_deposit: float = 10.0
+    ) -> tuple[bool, str | None]:
+        """
+        Check if client has an MT5 account with trading activity
+        (implies funded with at least the minimum deposit and traded).
+
+        Returns (is_funded, mt5_account_id).
+        Uses volume_lots > 0 as proxy for funded + active account.
+        """
+        accounts = await self.get_client_accounts(email)
+
+        for account in accounts:
+            platform = account.get("platform", "").lower()
+            volume_lots = float(account.get("volume_lots") or 0)
+            account_id = str(account.get("client_account") or "")
+
+            if platform == "mt5" and volume_lots > 0:
+                logger.info(
+                    "mt5_funded_account_found",
+                    email=email,
+                    account_id=account_id,
+                    volume_lots=volume_lots,
+                )
+                return True, account_id
+
+        # Check if MT5 exist but not yet funded
+        has_mt5 = any(a.get("platform", "").lower() == "mt5" for a in accounts)
+        logger.info(
+            "mt5_check_result",
+            email=email,
+            has_mt5=has_mt5,
+            funded=False,
+            account_count=len(accounts),
+        )
+        return False, None
 
 
 exness = ExnessClient()

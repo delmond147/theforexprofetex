@@ -3,6 +3,7 @@ main.py — Application entry point.
 """
 
 from __future__ import annotations
+from multiprocessing import context
 import os
 import asyncio
 from datetime import time as dtime
@@ -76,7 +77,11 @@ from src.handlers.verification import (
     AWAITING_BROKER_PHONE,
 )
 from src.db.database import init_db
-from src.services.activity_checker import run_activity_check, run_reminder_check
+from src.services.activity_checker import (
+    run_activity_check,
+    run_reminder_check,
+    run_mt5_check,
+)
 
 
 async def help_command(update, context) -> None:
@@ -264,6 +269,11 @@ def build_app() -> Application:
         logger.info("reminder_job_triggered")
         await run_reminder_check(context.bot)
 
+    async def _mt5_check_job(context) -> None:
+        """Wrapper for the 6-hour MT5 verification check."""
+        logger.info("mt5_check_job_triggered")
+        await run_mt5_check(context.bot)
+
     # ── Daily activity check — runs at 3AM UTC ────────────────────────────────
     if app.job_queue:
         app.job_queue.run_daily(
@@ -292,6 +302,14 @@ def build_app() -> Application:
 
     else:
         logger.warning("job_queue_not_available")
+
+    app.job_queue.run_repeating(
+        _mt5_check_job,
+        interval=21600,  # 6 hours in seconds
+        first=600,  # first run 10 minutes after bot starts
+        name="mt5_verification_check",
+    )
+    logger.info("jobs_scheduled")
 
     # ── Global error handler ──────────────────────────────────────────────────
     async def error_handler(update, context) -> None:

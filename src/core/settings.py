@@ -79,10 +79,11 @@ PAYMENT_DETAILS: str = os.environ.get(
 # ── Group Management ──────────────────────────────────────────────────────────
 VIP_GROUP_INVITE_LINK: str = os.environ.get("VIP_GROUP_INVITE_LINK", "")
 VIP_GROUP_ID: str = os.environ.get("VIP_GROUP_ID", "")  # numeric group ID for kicking
-INACTIVITY_DAYS: int = int(os.environ.get("INACTIVITY_DAYS", "60"))
+INACTIVITY_DAYS: int = int(os.environ.get("INACTIVITY_DAYS", "30"))
 WARNING_DAYS: int = int(
     os.environ.get("WARNING_DAYS", "7")
 )  # days before removal after warning
+MT5_GRACE_DAYS: int = int(os.environ.get("MT5_GRACE_DAYS", "2"))
 
 
 DIFFERENT_BROKER_PRICE: str = os.environ.get("DIFFERENT_BROKER_PRICE", "$35")
@@ -132,9 +133,19 @@ PAYMENT_METHOD_3_WALLET: str = os.environ.get(
     "PAYMENT_METHOD_3_WALLET", "Your Wallet Address"
 )
 
-# ── Payment Method 4 — Crypto ─────────────────────────────────────────────────
-PAYMENT_METHOD_4_NAME: str = os.environ.get("PAYMENT_METHOD_4_NAME", "Crypto (USDT)")
-PAYMENT_METHOD_4_NETWORK: str = os.environ.get("PAYMENT_METHOD_4_NETWORK", "TRC20")
-PAYMENT_METHOD_4_WALLET: str = os.environ.get(
-    "PAYMENT_METHOD_4_WALLET", "Your Wallet Address"
+# ── MT5 Verification ──────────────────────────────────────────────────────────
+MT5_GRACE_DAYS: int = int(os.environ.get("MT5_GRACE_DAYS", "5"))
+MT5_MIN_DEPOSIT: float = float(os.environ.get("MT5_MIN_DEPOSIT", "10.0"))
+INACTIVITY_DAYS: int = int(os.environ.get("INACTIVITY_DAYS", "30"))
+PARTNER_SWITCH_WARNING_HOURS: int = int(
+    os.environ.get("PARTNER_SWITCH_WARNING_HOURS", "24")
 )
+
+MT5_MIN_DEPOSIT: float = float(os.environ.get("MT5_MIN_DEPOSIT", "10.0"))
+
+# # ── Payment Method 4 — Crypto ─────────────────────────────────────────────────
+# PAYMENT_METHOD_4_NAME: str = os.environ.get("PAYMENT_METHOD_4_NAME", "Crypto (USDT)")
+# PAYMENT_METHOD_4_NETWORK: str = os.environ.get("PAYMENT_METHOD_4_NETWORK", "TRC20")
+# PAYMENT_METHOD_4_WALLET: str = os.environ.get(
+#     "PAYMENT_METHOD_4_WALLET", "Your Wallet Address"
+# )
