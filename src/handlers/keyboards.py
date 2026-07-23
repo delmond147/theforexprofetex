@@ -22,6 +22,8 @@ from src.core.settings import (
     PAYMENT_METHOD_1_NAME,
     PAYMENT_METHOD_2_NAME,
     PAYMENT_METHOD_3_NAME,
+    VIP_GROUP_ID,
+    UK_ASIA_BROKER_LINK,
 )
 
 
@@ -43,6 +45,11 @@ def main_menu() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     "🔄 USING A DIFFERENT BROKER?", callback_data="different_broker"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "🇬🇧🌏 UK & Asia Traders — Register Here", url=UK_ASIA_BROKER_LINK
                 )
             ],
             [InlineKeyboardButton("💎 VIP MENTORSHIP", callback_data="vip_mentorship")],
@@ -142,11 +149,7 @@ def pending_mt5_keyboard() -> InlineKeyboardMarkup:
                     "🔄 Check Funding Status", callback_data="check_mt5_status"
                 )
             ],
-            [
-                InlineKeyboardButton(
-                    "🔗 Create Exness Account", url=PARTNER_LINK
-                )
-            ],
+            [InlineKeyboardButton("🔗 Create Exness Account", url=PARTNER_LINK)],
             [InlineKeyboardButton("🆘 Get Support", url=MENTOR_CONTACT)],
             [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")],
         ]
@@ -156,7 +159,11 @@ def pending_mt5_keyboard() -> InlineKeyboardMarkup:
 def verified_beginners() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🎉 Join Beginners Group", url=BEGINNERS_GROUP_LINK)],
+            [
+                InlineKeyboardButton(
+                    "🎉 Get My Group Link", callback_data="get_group_link_beginners"
+                )
+            ],
             [
                 InlineKeyboardButton(
                     "📘 Upgrade to Advanced", callback_data="advanced_mentorship"
@@ -170,8 +177,12 @@ def verified_beginners() -> InlineKeyboardMarkup:
 def verified_advanced() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🎉 Join Exness VIP Group", url=ADVANCED_GROUP_LINK)],
-            [InlineKeyboardButton("💎 Upgrade to VIP", callback_data="vip_mentorship")],
+            [
+                InlineKeyboardButton(
+                    "🎉 Get My Group Link", callback_data="get_group_link_advanced"
+                )
+            ],
+            [InlineKeyboardButton("� Upgrade to VIP", callback_data="vip_mentorship")],
             [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")],
         ]
     )
@@ -182,8 +193,7 @@ def verified_swing() -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton(
-                    "📉 Join Swing Trading Channel",
-                    url=SWING_TRADING_LINK,
+                    "🎉 Get My Group Link", callback_data="get_group_link_swing"
                 )
             ],
             [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")],
@@ -234,11 +244,15 @@ def signal_payment_proof() -> InlineKeyboardMarkup:
     )
 
 
-def onboarding(group_url: str) -> InlineKeyboardMarkup:
+def onboarding(group_type: str = "advanced") -> InlineKeyboardMarkup:
     """Follow-up keyboard sent after a user joins a group."""
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("📌 Go to Group", url=group_url)],
+            [
+                InlineKeyboardButton(
+                    "📌 Get Group Link", callback_data=f"get_group_link_{group_type}"
+                )
+            ],
             [InlineKeyboardButton("❓ FAQs", callback_data="faq_menu")],
             [InlineKeyboardButton("🆘 Get Support", url=MENTOR_CONTACT)],
             [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")],

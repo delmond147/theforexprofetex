@@ -82,6 +82,7 @@ from src.services.activity_checker import (
     run_reminder_check,
     run_mt5_check,
 )
+from src.handlers.group_access import get_group_link
 
 
 async def help_command(update, context) -> None:
@@ -263,6 +264,11 @@ def build_app() -> Application:
     app.add_handler(CallbackQueryHandler(faq_menu, pattern="^faq_menu$"))
     faq_pattern = "^(" + "|".join(FAQ_ITEMS.keys()) + ")$"
     app.add_handler(CallbackQueryHandler(faq_answer, pattern=faq_pattern))
+    app.add_handler(
+        CallbackQueryHandler(
+            get_group_link, pattern="^get_group_link_(beginners|advanced|swing)$"
+        )
+    )
 
     async def _reminder_job(context) -> None:
         """Wrapper for the 4-hour incomplete flow reminder."""

@@ -149,3 +149,6 @@ MT5_MIN_DEPOSIT: float = float(os.environ.get("MT5_MIN_DEPOSIT", "10.0"))
 # PAYMENT_METHOD_4_WALLET: str = os.environ.get(
 #     "PAYMENT_METHOD_4_WALLET", "Your Wallet Address"
 # )
+UK_ASIA_BROKER_LINK: str = os.environ.get(
+    "UK_ASIA_BROKER_LINK", "https://your-uk-asia-broker-link.com"
+)

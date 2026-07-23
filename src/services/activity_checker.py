@@ -66,36 +66,62 @@ async def notify_admin_message(bot: Bot, message: str) -> None:
 
 async def check_user_activity(email: str) -> tuple[bool, str | None]:
     """
-    Check if a client has traded in the last INACTIVITY_DAYS.
+    Check if a client has placed trades in the last INACTIVITY_DAYS.
+    Uses GET /api/reports/orders/ for accurate activity detection.
     Returns (is_active, last_trade_date).
     """
     try:
-        results = await exness.get_client_accounts(email)
-        if not results:
+        from datetime import datetime, timedelta
+
+        # Get all MT5 accounts for this email
+        accounts = await exness.get_client_accounts(email)
+        if not accounts:
             return False, None
 
-        latest_trade = None
-        for account in results:
-            trade_date = account.get("client_account_last_trade")
-            if trade_date:
-                if not latest_trade or trade_date > latest_trade:
-                    latest_trade = trade_date
+        mt5_accounts = [a for a in accounts if a.get("platform", "").lower() == "mt5"]
 
-        if not latest_trade:
+        if not mt5_accounts:
             return False, None
 
-        trade_dt = datetime.fromisoformat(latest_trade)
-        now = (
-            datetime.now(timezone.utc)
-            if trade_dt.tzinfo is not None
-            else datetime.utcnow()
+        date_from = (datetime.utcnow() - timedelta(days=INACTIVITY_DAYS)).strftime(
+            "%Y-%m-%d"
         )
-        days_since = (now - trade_dt).days
-        return days_since <= INACTIVITY_DAYS, latest_trade
+
+        # Check each MT5 account for recent orders
+        for account in mt5_accounts:
+            account_id = str(account.get("client_account") or "")
+            if not account_id:
+                continue
+
+            data = await exness._get(
+                "/reports/orders/",
+                params={
+                    "client_account": account_id,
+                    "date_from": date_from,
+                },
+            )
+
+            orders = []
+            if isinstance(data, dict):
+                orders = data.get("data") or []
+
+            if orders:
+                # Has recent orders — active
+                last_trade = account.get("client_account_last_trade")
+                logger.info(
+                    "client_active_via_orders",
+                    email=email,
+                    account=account_id,
+                    order_count=len(orders),
+                )
+                return True, last_trade
+
+        logger.info("client_inactive", email=email)
+        return False, None
 
     except Exception as e:
         logger.error("activity_check_failed", email=email, error=str(e))
-        return True, None  # assume active on error
+        return True, None  # assume active on error to avoid false removals
 
 
 async def send_warning(bot: Bot, telegram_id: int, first_name: str) -> bool:
@@ -378,12 +404,24 @@ async def run_mt5_check(bot: Bot) -> None:
         email = user["verified_email"]
         first_name = user["first_name"] or "Trader"
         mentorship = user["mentorship_type"] or "advanced"
+        verified_at = user["verified_at"]  # needed to check if MT5 is NEW
 
-        is_funded, mt5_account_id = await exness.check_mt5_funded(
-            email, min_deposit=MT5_MIN_DEPOSIT
-        )
+        try:
+            is_funded, mt5_account_id, is_new_account = await asyncio.wait_for(
+                exness.check_mt5_funded(
+                    email,
+                    min_deposit=MT5_MIN_DEPOSIT,
+                    verified_at=verified_at,
+                ),
+                timeout=20.0,
+            )
+        except asyncio.TimeoutError:
+            logger.error("mt5_recheck_timeout", email=email)
+            await asyncio.sleep(0.3)
+            continue
 
-        if is_funded and mt5_account_id:
+        if is_funded and mt5_account_id and is_new_account:
+            # ✅ New account confirmed and funded — grant full access
             set_mt5_verified(telegram_id, mt5_account_id)
 
             group_url = {
@@ -397,14 +435,19 @@ async def run_mt5_check(bot: Bot) -> None:
                     chat_id=telegram_id,
                     text=(
                         f"🎉 *MT5 Verification Complete!*\n\n"
-                        f"Hi {first_name}! Your MT5 account is now active "
+                        f"Hi {first_name}! Your new MT5 account is now active "
                         f"and funded. You're all set! ✅\n\n"
-                        f"Tap below to join your group 👇"
+                        f"Tap below to get your personal group link 👇"
                     ),
                     parse_mode="Markdown",
                     reply_markup=InlineKeyboardMarkup(
                         [
-                            [InlineKeyboardButton("🎉 Join Group", url=group_url)],
+                            [
+                                InlineKeyboardButton(
+                                    "🎉 Get My Group Link",
+                                    callback_data=f"get_group_link_{mentorship}",
+                                )
+                            ],
                             [
                                 InlineKeyboardButton(
                                     "🏠 Main Menu", callback_data="main_menu"
@@ -423,8 +466,109 @@ async def run_mt5_check(bot: Bot) -> None:
                     f"✅ *MT5 Verified — Group Access Granted*\n\n"
                     f"👤 {first_name} (@{user['username'] or 'no username'})\n"
                     f"📧 {email}\n"
-                    f"💻 MT5 Account: {mt5_account_id}"
+                    f"💻 New MT5 Account: {mt5_account_id}"
                 ),
+            )
+
+        elif is_funded and mt5_account_id and not is_new_account:
+            # ❌ Has funded MT5 but it's an OLD account from previous partner
+            logger.info(
+                "mt5_old_account_detected", telegram_id=telegram_id, email=email
+            )
+            try:
+                await bot.send_message(
+                    chat_id=telegram_id,
+                    text=(
+                        f"⚠️ *Reminder: New MT5 Account Required*\n\n"
+                        f"Hi {first_name}! We can see your existing MT5 account "
+                        f"but it was created under a *previous partner*.\n\n"
+                        f"Trades on this old account generate commissions for your "
+                        f"old partner, not {MENTOR_NAME}.\n\n"
+                        f"You must create a *new* MT5 account after switching to "
+                        f"{MENTOR_NAME}'s partner link:\n\n"
+                        f"1️⃣ Log into your Exness Personal Area\n"
+                        f"2️⃣ Go to *My Accounts → Create New Account*\n"
+                        f"3️⃣ Select *MT5* as the platform\n"
+                        f"4️⃣ Transfer your funds to the new account\n"
+                        f"5️⃣ Place at least one trade on the new account\n\n"
+                        f"⏰ Please complete this before your deadline expires."
+                    ),
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(
+                        [
+                            [
+                                InlineKeyboardButton(
+                                    "🔗 Open Exness Personal Area",
+                                    url="https://my.exness.com",
+                                )
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    "✅ Check MT5 Status",
+                                    callback_data="check_mt5_status",
+                                )
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    "🆘 Get Support", url=MENTOR_CONTACT
+                                )
+                            ],
+                        ]
+                    ),
+                )
+            except TelegramError as e:
+                logger.error(
+                    "mt5_old_account_notify_failed",
+                    telegram_id=telegram_id,
+                    error=str(e),
+                )
+
+        elif not is_funded and mt5_account_id and is_new_account:
+            # ⏳ New account exists but not yet funded/traded
+            logger.info("mt5_new_unfunded", telegram_id=telegram_id, email=email)
+            try:
+                await bot.send_message(
+                    chat_id=telegram_id,
+                    text=(
+                        f"⏳ *Reminder: Fund Your MT5 Account*\n\n"
+                        f"Hi {first_name}! We found your new MT5 account "
+                        f"but it hasn't been funded or traded on yet.\n\n"
+                        f"Please deposit funds (minimum *${int(MT5_MIN_DEPOSIT)}*) "
+                        f"and place at least one trade to complete your verification.\n\n"
+                        f"⏰ Please complete this before your deadline expires."
+                    ),
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(
+                        [
+                            [
+                                InlineKeyboardButton(
+                                    "🔗 Open Exness Personal Area",
+                                    url="https://my.exness.com",
+                                )
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    "✅ Check MT5 Status",
+                                    callback_data="check_mt5_status",
+                                )
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    "🆘 Get Support", url=MENTOR_CONTACT
+                                )
+                            ],
+                        ]
+                    ),
+                )
+            except TelegramError as e:
+                logger.error(
+                    "mt5_unfunded_notify_failed", telegram_id=telegram_id, error=str(e)
+                )
+
+        else:
+            # No MT5 found at all
+            logger.info(
+                "mt5_not_found_on_recheck", telegram_id=telegram_id, email=email
             )
 
         await asyncio.sleep(0.3)

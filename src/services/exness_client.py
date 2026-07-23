@@ -309,6 +309,56 @@ class ExnessClient:
 
     # ── Other endpoints ───────────────────────────────────────────────────────
 
+    async def get_client_orders(
+        self, client_account: str, date_from: str | None = None
+    ) -> list[dict]:
+        """
+        Fetch trade orders for a specific client account.
+        GET /api/reports/orders/
+
+        Returns list of order dicts with:
+        - volume_lots: lots traded
+        - close_date: when trade last closed
+        - client_account: MT5 account number
+        """
+        params: dict = {"client_account": client_account}
+        if date_from:
+            params["date_from"] = date_from
+
+        data = await self._get("/reports/orders/", params=params)
+        logger.info(
+            "client_orders_response",
+            client_account=client_account,
+            data=str(data)[:300],
+        )
+
+        if isinstance(data, dict):
+            return data.get("data") or []
+        return []
+
+    async def check_recent_trading(
+        self, client_account: str, days: int = 15
+    ) -> tuple[bool, float]:
+        """
+        Check if a client has traded in the last N days.
+        Returns (has_traded_recently, total_reward_usd)
+        """
+
+        from datetime import datetime, timedelta
+
+        date_from = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+        orders = await self.get_client_orders(
+            client_account=client_account, date_from=date_from
+        )
+
+        if not orders:
+            return False, 0.0
+        total_reward = sum(float(order.get("reward_usd", 0)) for order in orders)
+        return True, total_reward
+
+    # ── Client accounts ─────────────────────────────────────────────────────
+
     async def get_client_accounts(self, email: str) -> list[dict]:
         """
         Fetch all trading accounts for a client email.
@@ -332,41 +382,90 @@ class ExnessClient:
         return data if isinstance(data, list) else []
 
     async def check_mt5_funded(
-        self, email: str, min_deposit: float = 10.0
-    ) -> tuple[bool, str | None]:
+        self, email: str, min_deposit: float = 10.0, verified_at: str | None = None
+    ) -> tuple[bool, str | None, bool]:
         """
-        Check if client has an MT5 account with trading activity
-        (implies funded with at least the minimum deposit and traded).
+        Check if client has a NEW MT5 account created after verification
+        that has trading activity (implies funded).
 
-        Returns (is_funded, mt5_account_id).
-        Uses volume_lots > 0 as proxy for funded + active account.
+        Returns (is_funded, mt5_account_id, is_new_account).
+
+        is_new_account = True if account was created after verified_at date.
+        This ensures member created a fresh MT5 under the new partner,
+        not reusing an old account from a previous partner.
         """
+        from datetime import datetime
+
         accounts = await self.get_client_accounts(email)
+        logger.info(
+            "mt5_check",
+            email=email,
+            account_count=len(accounts),
+            verified_at=verified_at,
+        )
+
+        new_funded_account = None  # created after verification + has trades
+        old_funded_account = None  # created before verification + has trades
+        new_unfunded_account = None  # created after verification + no trades
+        has_any_mt5 = False
 
         for account in accounts:
-            platform = account.get("platform", "").lower()
-            volume_lots = float(account.get("volume_lots") or 0)
+            platform = str(account.get("platform", "")).lower()
+            if platform != "mt5":
+                continue
+
+            has_any_mt5 = True
             account_id = str(account.get("client_account") or "")
+            created_date = account.get("client_account_created") or ""
+            volume_lots = float(account.get("volume_lots") or 0)
 
-            if platform == "mt5" and volume_lots > 0:
-                logger.info(
-                    "mt5_funded_account_found",
-                    email=email,
-                    account_id=account_id,
-                    volume_lots=volume_lots,
-                )
-                return True, account_id
+            # Determine if account is new (created after verification)
+            is_new = False
+            if verified_at and created_date:
+                try:
+                    created_dt = datetime.fromisoformat(created_date)
+                    verified_dt = datetime.fromisoformat(verified_at)
+                    is_new = created_dt >= verified_dt
+                except Exception:
+                    is_new = False
+            elif created_date:
+                # No verified_at — can't determine, treat as potentially new
+                is_new = True
 
-        # Check if MT5 exist but not yet funded
-        has_mt5 = any(a.get("platform", "").lower() == "mt5" for a in accounts)
-        logger.info(
-            "mt5_check_result",
-            email=email,
-            has_mt5=has_mt5,
-            funded=False,
-            account_count=len(accounts),
-        )
-        return False, None
+            logger.info(
+                "mt5_account_check",
+                account_id=account_id,
+                created_date=created_date,
+                volume_lots=volume_lots,
+                is_new=is_new,
+            )
+
+            if is_new and volume_lots > 0:
+                new_funded_account = account_id
+                break  # perfect match — stop looking
+            elif is_new and volume_lots == 0:
+                if not new_unfunded_account:
+                    new_unfunded_account = account_id
+            elif not is_new and volume_lots > 0:
+                if not old_funded_account:
+                    old_funded_account = account_id
+
+        if new_funded_account:
+            logger.info("mt5_new_funded", email=email, account=new_funded_account)
+            return True, new_funded_account, True
+
+        # Has old funded account but no new one
+        if old_funded_account and not new_unfunded_account:
+            logger.info("mt5_old_account_only", email=email, account=old_funded_account)
+            return False, old_funded_account, False
+
+        # Has new account but not funded yet
+        if new_unfunded_account:
+            logger.info("mt5_new_unfunded", email=email, account=new_unfunded_account)
+            return False, new_unfunded_account, True
+
+        logger.info("mt5_not_found", email=email, has_any_mt5=has_any_mt5)
+        return False, None, False
 
 
 exness = ExnessClient()
