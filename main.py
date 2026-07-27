@@ -41,6 +41,7 @@ from src.handlers.signals import (
     check_inactive_now,
     list_verified,
     check_status,
+    kick_unverified,
 )
 from src.handlers.verification import (
     beginners_entry,
@@ -121,6 +122,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("checkinactive", check_inactive_now))
     app.add_handler(CommandHandler("listusers", list_verified))
     app.add_handler(CommandHandler("checkstatus", check_status))
+    app.add_handler(CommandHandler("kickunverified", kick_unverified))
 
     # ── Admin credential setup conversation ───────────────────────────────────
     admin_conv = ConversationHandler(

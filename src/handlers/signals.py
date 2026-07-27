@@ -7,9 +7,23 @@ from __future__ import annotations
 import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
+from telegram.error import TelegramError
+from datetime import datetime, timedelta
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from src.core.settings import ADMIN_CHAT_ID, MENTOR_NAME
-from src.db.database import get_all_verified_users
+from src.core.settings import (
+    ADMIN_CHAT_ID,
+    MENTOR_NAME,
+    VIP_GROUP_ID,
+    MT5_GRACE_DAYS,
+    MENTOR_CONTACT,
+)
+from src.db.database import (
+    get_all_verified_users,
+    get_verified_but_no_mt5,
+    set_mt5_pending,
+    mark_removed,
+)
 from src.core.logging import logger
 
 
@@ -204,4 +218,133 @@ async def check_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             or ["None"]
         ),
         parse_mode="Markdown",
+    )
+
+
+async def kick_unverified(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    /kickunverified — Kicks all users who never completed MT5 verification.
+    They must re-verify MT5 status to get a new one-time group link.
+    Admin only.
+    """
+    user = update.effective_user
+    if not _is_admin(user.id):
+        return
+
+    users = get_verified_but_no_mt5()
+
+    if not users:
+        await update.message.reply_text(
+            "✅ No users found without MT5 verification. Everyone is compliant."
+        )
+        return
+
+    await update.message.reply_text(
+        f"⏳ Found *{len(users)}* users without MT5 verification.\n\n"
+        f"Kicking them from the group and resetting their status...",
+        parse_mode="Markdown",
+    )
+
+    kicked = 0
+    notified = 0
+    failed = 0
+
+    for db_user in users:
+        telegram_id = db_user["telegram_id"]
+        first_name = db_user["first_name"] or "Trader"
+        email = db_user["verified_email"]
+
+        # Step 1: Kick from Telegram group
+        if VIP_GROUP_ID:
+            try:
+                await context.bot.ban_chat_member(
+                    chat_id=int(VIP_GROUP_ID),
+                    user_id=telegram_id,
+                )
+                await asyncio.sleep(1)
+                await context.bot.unban_chat_member(
+                    chat_id=int(VIP_GROUP_ID),
+                    user_id=telegram_id,
+                )
+                kicked += 1
+                logger.info(
+                    "kickunverified_kicked", telegram_id=telegram_id, email=email
+                )
+            except TelegramError as e:
+                logger.error(
+                    "kickunverified_kick_failed", telegram_id=telegram_id, error=str(e)
+                )
+                failed += 1
+
+        # Step 2: Reset MT5 status — set a new deadline
+        deadline = (datetime.utcnow() + timedelta(days=MT5_GRACE_DAYS)).isoformat()
+        set_mt5_pending(telegram_id, deadline)
+
+        # Step 3: Notify the user
+        try:
+            await context.bot.send_message(
+                chat_id=telegram_id,
+                text=(
+                    f"⚠️ *Important Notice from {MENTOR_NAME}*\n\n"
+                    f"Hi {first_name}! 👋\n\n"
+                    f"We've updated our verification requirements. "
+                    f"To remain in the {MENTOR_NAME} VIP group, all members "
+                    f"must have a *new MT5 trading account* created under "
+                    f"{MENTOR_NAME}'s partner link with an active deposit.\n\n"
+                    f"Your access has been temporarily removed until you "
+                    f"complete this step.\n\n"
+                    f"Here's what to do:\n"
+                    f"1️⃣ Log into your *Exness Personal Area*\n"
+                    f"2️⃣ Create a *new MT5 account* (after switching to "
+                    f"{MENTOR_NAME}'s partner link)\n"
+                    f"3️⃣ Fund the account (minimum *$10*)\n"
+                    f"4️⃣ Place at least one trade\n"
+                    f"5️⃣ Tap /start and tap *'Check MT5 Status'*\n\n"
+                    f"⏰ You have *{MT5_GRACE_DAYS} days* to complete this "
+                    f"and get your new group access link.\n\n"
+                    f"Any questions? Tap below 👇"
+                ),
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "✅ Check MT5 Status", callback_data="check_mt5_status"
+                            )
+                        ],
+                        [
+                            InlineKeyboardButton(
+                                "🔗 Open Exness Personal Area",
+                                url="https://my.exness.com",
+                            )
+                        ],
+                        [InlineKeyboardButton("🆘 Get Support", url=MENTOR_CONTACT)],
+                    ]
+                ),
+            )
+            notified += 1
+        except TelegramError as e:
+            logger.error(
+                "kickunverified_notify_failed", telegram_id=telegram_id, error=str(e)
+            )
+
+        await asyncio.sleep(0.5)
+
+    # Send summary to admin
+    await update.message.reply_text(
+        f"✅ *Kick Unverified Complete*\n\n"
+        f"👥 Total found: {len(users)}\n"
+        f"🦵 Kicked from group: {kicked}\n"
+        f"📩 Notified: {notified}\n"
+        f"❌ Failed to kick: {failed}\n\n"
+        f"All affected users have been notified and given "
+        f"{MT5_GRACE_DAYS} days to complete MT5 verification.",
+        parse_mode="Markdown",
+    )
+    logger.info(
+        "kickunverified_complete",
+        total=len(users),
+        kicked=kicked,
+        notified=notified,
+        failed=failed,
     )

@@ -524,3 +524,14 @@ def get_all_verified_users() -> list[sqlite3.Row]:
             WHERE verified_email IS NOT NULL
               AND removed = 0
         """).fetchall()
+
+
+def get_verified_but_no_mt5() -> list[sqlite3.Row]:
+    """Return users who passed affiliation check but never completed MT5 verification."""
+    with _get_conn() as conn:
+        return conn.execute("""
+            SELECT * FROM users
+            WHERE verified_email IS NOT NULL
+              AND mt5_verified   = 0
+              AND removed        = 0
+        """).fetchall()
