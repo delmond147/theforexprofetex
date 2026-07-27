@@ -124,21 +124,25 @@ async def send_announcement(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def check_inactive_now(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """
-    /checkinactive — Manually trigger the activity check.
-    Admin only.
-    """
+    """/checkinactive — Manually trigger the activity check."""
     user = update.effective_user
     if not _is_admin(user.id):
         return
 
     await update.message.reply_text("⏳ Running activity check now...")
-    from src.services.activity_checker import run_activity_check
+    try:
+        from src.services.activity_checker import run_activity_check
 
-    await run_activity_check(context.bot)
-    await update.message.reply_text(
-        "✅ Activity check complete. Check your inbox for the summary."
-    )
+        await run_activity_check(context.bot)
+        await update.message.reply_text(
+            "✅ Activity check complete. Check your inbox for the summary."
+        )
+    except Exception as e:
+        logger.error("checkinactive_command_failed", error=str(e), exc_info=True)
+        await update.message.reply_text(
+            f"❌ Activity check failed with error:\n\n`{str(e)}`",
+            parse_mode="Markdown",
+        )
 
 
 async def list_verified(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -172,3 +176,32 @@ async def list_verified(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         text = text[:4000] + "\n\n_...list truncated. Too many users._"
 
     await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def check_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/checkstatus — Shows current DB state for debugging."""
+    user = update.effective_user
+    if not _is_admin(user.id):
+        return
+
+    from src.db.database import get_all_verified_users, get_pending_mt5_users
+
+    verified = get_all_verified_users()
+    pending = get_pending_mt5_users()
+
+    await update.message.reply_text(
+        f"📊 *Current Bot Status*\n\n"
+        f"✅ Verified users: {len(verified)}\n"
+        f"⏳ Pending MT5: {len(pending)}\n\n"
+        f"*Verified users:*\n"
+        + "\n".join(
+            [
+                f"• {u['first_name']} — {u['verified_email']} "
+                f"(MT5: {'✅' if u['mt5_verified'] else '❌'}, "
+                f"Removed: {'✅' if u['removed'] else '❌'})"
+                for u in verified
+            ]
+            or ["None"]
+        ),
+        parse_mode="Markdown",
+    )

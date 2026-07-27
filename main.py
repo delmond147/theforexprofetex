@@ -35,10 +35,12 @@ from src.handlers.admin import (
     AWAITING_API_PASSWORD,
 )
 from src.handlers.signals import (
+    check_status,
     send_signal,
     send_announcement,
     check_inactive_now,
     list_verified,
+    check_status,
 )
 from src.handlers.verification import (
     beginners_entry,
@@ -118,6 +120,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("announce", send_announcement))
     app.add_handler(CommandHandler("checkinactive", check_inactive_now))
     app.add_handler(CommandHandler("listusers", list_verified))
+    app.add_handler(CommandHandler("checkstatus", check_status))
 
     # ── Admin credential setup conversation ───────────────────────────────────
     admin_conv = ConversationHandler(

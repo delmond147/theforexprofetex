@@ -75,12 +75,16 @@ async def check_user_activity(email: str) -> tuple[bool, str | None]:
 
         # Get all MT5 accounts for this email
         accounts = await exness.get_client_accounts(email)
+        logger.info("activity_accounts_found", email=email, count=len(accounts))
         if not accounts:
+            logger.info("activity_no_accounts", email=email)
             return False, None
 
         mt5_accounts = [a for a in accounts if a.get("platform", "").lower() == "mt5"]
+        logger.info("activity_mt5_accounts", email=email, count=len(mt5_accounts))
 
         if not mt5_accounts:
+            logger.info("activity_no_mt5_accounts", email=email)
             return False, None
 
         date_from = (datetime.utcnow() - timedelta(days=INACTIVITY_DAYS)).strftime(
@@ -100,6 +104,12 @@ async def check_user_activity(email: str) -> tuple[bool, str | None]:
                     "date_from": date_from,
                 },
             )
+            logger.info(
+                "activity_orders_response",
+                email=email,
+                account=account_id,
+                data=str(data)[:200],  # log first 200 chars of response
+            )
 
             orders = []
             if isinstance(data, dict):
@@ -112,8 +122,21 @@ async def check_user_activity(email: str) -> tuple[bool, str | None]:
                     "client_active_via_orders",
                     email=email,
                     account=account_id,
-                    order_count=len(orders),
+                    data=str(data)[:200],  # log first 200 chars of response
                 )
+
+                orders = []
+                if isinstance(data, dict):
+                    orders = data.get("data") or []
+
+                if orders:
+                    last_trade = account.get("client_account_last_trade")
+                    logger.info(
+                        "client_active_via_orders",
+                        email=email,
+                        account=account_id,
+                        order_count=len(orders),
+                    )
                 return True, last_trade
 
         logger.info("client_inactive", email=email)
