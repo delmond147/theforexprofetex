@@ -398,7 +398,7 @@ async def run_mt5_check(bot: Bot) -> None:
                     f"create and fund your MT5 account has passed.\n\n"
                     f"To regain access:\n"
                     f"1️⃣ Create an MT5 account on Exness\n"
-                    f"2️⃣ Fund it with minimum $10\n"
+                    f"2️⃣ Fund it with minimum $50\n"
                     f"3️⃣ Place at least one trade\n"
                     f"4️⃣ Tap /start to verify again 📈"
                 ),
