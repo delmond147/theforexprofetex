@@ -77,7 +77,7 @@ def init_db() -> None:
                 full_name TEXT,
                 phone TEXT,
                 mentorship_type TEXT,
-                joined_at TEXT DEFAULT (datetime('now'))
+                joined_at TEXT DEFAULT (datetime('now')),
                 updated_at TEXT DEFAULT (datetime('now'))
             );
             
