@@ -69,7 +69,46 @@ def init_db() -> None:
                 last_reminded TEXT,
                 reminder_count INTEGER DEFAULT 0
             );
+            
+            CREATE TABLE IF NOT EXISTS members (
+                telegram_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                full_name TEXT,
+                phone TEXT,
+                mentorship_type TEXT,
+                joined_at TEXT DEFAULT (datetime('now'))
+                updated_at TEXT DEFAULT (datetime('now'))
+            );
+            
+            CREATE TABLE IF NOT EXISTS partner_switch_log (
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                telegram_id           INTEGER,
+                email                 TEXT,
+                detected_at           TEXT DEFAULT (datetime('now')),
+                warning_sent_at       TEXT,
+                removed               INTEGER DEFAULT 0
+            );
         """)
+
+        # ── Migrations: safely add new columns to existing databases ─────────
+        migrations = [
+            "ALTER TABLE users ADD COLUMN last_active_check TEXT",
+            "ALTER TABLE users ADD COLUMN warning_sent_at TEXT",
+            "ALTER TABLE users ADD COLUMN removed INTEGER DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN mt5_verified INTEGER DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN mt5_check_deadline TEXT",
+            "ALTER TABLE users ADD COLUMN mt5_account_id TEXT",
+            "ALTER TABLE users ADD COLUMN partner_switch_warned_at TEXT",
+        ]
+        for migration in migrations:
+            try:
+                conn.execute(migration)
+                conn.commit()
+            except Exception:
+                pass  # column already exists — safe to ignore
+
+            logger.info("db_initialized", path=DB_PATH)
 
         # Check if mt5 columns exist (for migration of existing databases)
         cursor = conn.cursor()
