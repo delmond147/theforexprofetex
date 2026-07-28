@@ -42,6 +42,8 @@ from src.handlers.signals import (
     list_verified,
     check_status,
     kick_unverified,
+    mt5_status_report,
+    confirm_kick_inactive_callback,
 )
 from src.handlers.verification import (
     beginners_entry,
@@ -123,6 +125,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("listusers", list_verified))
     app.add_handler(CommandHandler("checkstatus", check_status))
     app.add_handler(CommandHandler("kickunverified", kick_unverified))
+    app.add_handler(CommandHandler("mt5status", mt5_status_report))
 
     # ── Admin credential setup conversation ───────────────────────────────────
     admin_conv = ConversationHandler(
@@ -272,6 +275,11 @@ def build_app() -> Application:
     app.add_handler(
         CallbackQueryHandler(
             get_group_link, pattern="^get_group_link_(beginners|advanced|swing)$"
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            confirm_kick_inactive_callback, pattern="^confirm_kick_inactive$"
         )
     )
 
