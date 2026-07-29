@@ -6,7 +6,12 @@ from __future__ import annotations
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from src.handlers.keyboards import main_menu, verified_beginners, verified_advanced, pending_mt5_keyboard
+from src.handlers.keyboards import (
+    main_menu,
+    verified_beginners,
+    verified_advanced,
+    pending_mt5_keyboard,
+)
 from src.core.logging import logger
 from src.core.settings import BEGINNERS_GROUP_LINK, ADVANCED_GROUP_LINK, MENTOR_NAME
 from src.db.database import upsert_user, get_user
@@ -44,7 +49,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     db_user = get_user(user.id)
 
     if db_user and db_user["verified_email"]:
-        if db_user.get("mt5_verified", 0) == 0:
+        if (db_user["mt5_verified"] or 0) == 0:
             await update.message.reply_text(
                 "⚠️ *Verification Pending MT5 & Deposit*\n\n"
                 f"Hi {name}! Your Exness account is linked under *{MENTOR_NAME}*, "
