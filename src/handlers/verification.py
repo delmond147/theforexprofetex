@@ -79,7 +79,7 @@ from src.handlers.admin import (
     failed_verification_message,
 )
 
-# ConversationHandler states
+# ── Conversation states ───────────────────────────────────────────────────────
 AWAITING_EMAIL = 1
 AWAITING_REVERIFY_EMAIL = 2
 AWAITING_SIGNAL_NAME = 3
@@ -91,6 +91,7 @@ AWAITING_VIP_PHONE = 8
 AWAITING_VIP_PAYMENT_METHOD = 9
 
 MENTORSHIP_KEY = "mentorship_type"
+SIGNAL_PACKAGE_KEY = "signal_package"
 
 SIGNAL_PACKAGE_LABELS = {
     "signal_1month": "1 Month",
@@ -106,8 +107,6 @@ SIGNAL_PACKAGE_PRICES = {
     "signal_1year": SIGNAL_PRICE_1YEAR,
 }
 
-SIGNAL_PACKAGE_KEY = "signal_package"
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -118,13 +117,12 @@ async def _typing(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
 
 
 def _mentorship_assets(mentorship: str) -> tuple[str, object, str]:
-    """Return (group_word, success_kb, group_type) for a mentorship type."""
     if mentorship == "beginners":
         return LABEL_BEGINNERS, verified_beginners(), "beginners"
-    elif mentorship == "advanced":
-        return LABEL_ADVANCED, verified_advanced(), "advanced"
-    else:
+    elif mentorship == "swing":
         return LABEL_SWING, verified_swing(), "swing"
+    else:
+        return LABEL_ADVANCED, verified_advanced(), "advanced"
 
 
 async def _send_success(
@@ -141,7 +139,7 @@ async def _send_success(
         "🎉 *All checks passed! Welcome to {MENTOR_NAME}!*\n\n"
         "✅ Exness account linked\n"
         "✅ MT5 account active\n"
-        "✅ Deposit confirmed\n\n"
+        "✅ Deposit & trades confirmed\n\n"
         "Tap below to get your group link 👇"
     ).format(MENTOR_NAME=MENTOR_NAME)
 
@@ -186,8 +184,8 @@ async def _send_mt5_pending(
     query=None,
 ) -> None:
     """Send appropriate pending MT5 message based on what was found."""
-
-    if mt5_account_id and not is_new_account and has_any_mt5:
+    if mt5_account_id and not is_new_account:
+        # Has old MT5 account from previous partner
         msg = (
             "✅ *Exness account verified!*\n\n"
             "⚠️ *Action Required — Create a New MT5 Account*\n\n"
@@ -202,40 +200,46 @@ async def _send_mt5_pending(
             "5️⃣ Place at least one trade on the *new* account\n\n"
             "⚠️ *Important:* The new account must be created *after* "
             "you switched to {MENTOR_NAME}'s partner link.\n\n"
-            f"⏰ You have *{MT5_GRACE_DAYS} days* to complete this.\n\n"
+            "⏰ You have *{days} days* to complete this.\n\n"
             "Tap below to check your status once done 👇"
-        ).format(MENTOR_NAME=MENTOR_NAME)
+        ).format(MENTOR_NAME=MENTOR_NAME, days=MT5_GRACE_DAYS)
 
     elif mt5_account_id and is_new_account:
+        # Has new MT5 but no trades yet (not funded/traded)
         msg = (
             "✅ *Exness account verified!*\n\n"
             "⚠️ *Almost there!* We found your new MT5 account "
-            "but it hasn't been funded or traded on yet.\n\n"
+            "but it doesn't have any completed trades yet.\n\n"
             "To complete your verification:\n"
             "1️⃣ Log into your *Exness Personal Area*\n"
-            f"2️⃣ Deposit funds into your MT5 account (minimum *${int(MT5_MIN_DEPOSIT)}*)\n"
-            "3️⃣ Place at least one trade\n\n"
-            f"⏰ You have *{MT5_GRACE_DAYS} days* to complete this.\n\n"
-            "Tap below to check your status once funded 👇"
-        )
+            "2️⃣ Fund your MT5 account (minimum *${min_deposit}*)\n"
+            "3️⃣ Place and complete at least one trade\n\n"
+            "⏰ You have *{days} days* to complete this.\n\n"
+            "Tap below to check your status once funded and traded 👇"
+        ).format(min_deposit=int(MT5_MIN_DEPOSIT), days=MT5_GRACE_DAYS)
 
     else:
+        # No MT5 account found at all
         msg = (
             "✅ *Exness account verified!*\n\n"
             "⚠️ *One more step required!*\n\n"
-            "You need to create a *new* MT5 trading account on Exness "
-            "and make a deposit to complete your verification.\n\n"
+            "You need to create a *new* MT5 trading account on Exness, "
+            "fund it, and place at least one trade to complete verification.\n\n"
             "Here's how:\n"
             "1️⃣ Log into your *Exness Personal Area*\n"
             "2️⃣ Go to *My Accounts → Create Account*\n"
             "3️⃣ Select *MT5* as the platform\n"
-            f"4️⃣ Fund your account (minimum *${int(MT5_MIN_DEPOSIT)}*)\n"
+            "4️⃣ Fund your account (minimum *${min_deposit}*)\n"
             "5️⃣ Place at least one trade\n\n"
             "⚠️ *Important:* Create this account *after* switching to "
-            "{MENTOR_NAME}'s partner link so commissions go to the right partner.\n\n"
-            f"⏰ You have *{MT5_GRACE_DAYS} days* to complete this.\n\n"
+            "{MENTOR_NAME}'s partner link.\n\n"
+            "⏰ You have *{days} days* to complete this.\n\n"
             "Tap below to check your status once done 👇"
-        ).format(MENTOR_NAME=MENTOR_NAME)
+        ).format(
+            min_deposit=int(MT5_MIN_DEPOSIT),
+            MENTOR_NAME=MENTOR_NAME,
+            days=MT5_GRACE_DAYS,
+        )
 
     if via_query and query:
         await query.edit_message_text(
@@ -284,7 +288,7 @@ async def check_mt5_status_callback(
                 min_deposit=MT5_MIN_DEPOSIT,
                 verified_at=verified_at,
             ),
-            timeout=20.0,
+            timeout=25.0,
         )
     except asyncio.TimeoutError:
         logger.error("mt5_recheck_timeout", email=email)
@@ -294,6 +298,14 @@ async def check_mt5_status_callback(
             reply_markup=pending_mt5_keyboard(),
         )
         return
+
+    logger.info(
+        "mt5_recheck_result",
+        email=email,
+        is_funded=is_funded,
+        mt5_account_id=mt5_account_id,
+        is_new_account=is_new_account,
+    )
 
     if is_funded and mt5_account_id and is_new_account:
         set_mt5_verified(telegram_id, mt5_account_id)
@@ -345,6 +357,7 @@ async def beginners_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         db_user
         and db_user["verified_email"]
         and db_user["mentorship_type"] == "beginners"
+        and (db_user["mt5_verified"] or 0) == 1
     ):
         await query.edit_message_text(
             "✅ You're already verified for *Beginners Mentorship*!\n\n"
@@ -381,6 +394,7 @@ async def advanced_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         db_user
         and db_user["verified_email"]
         and db_user["mentorship_type"] == "advanced"
+        and (db_user["mt5_verified"] or 0) == 1
     ):
         await query.edit_message_text(
             "✅ You're already verified for *Exness VIP Signals*!\n\n"
@@ -413,7 +427,12 @@ async def swing_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     )
 
     db_user = get_user(query.from_user.id)
-    if db_user and db_user["verified_email"] and db_user["mentorship_type"] == "swing":
+    if (
+        db_user
+        and db_user["verified_email"]
+        and db_user["mentorship_type"] == "swing"
+        and (db_user["mt5_verified"] or 0) == 1
+    ):
         await query.edit_message_text(
             "✅ You're already verified for *Swing Trading*!\n\n"
             "Tap below to get your group link 👇",
@@ -549,19 +568,19 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return ConversationHandler.END
 
     if client:
-        logger.info("verify_success", user_id=user.id, email=email)
+        logger.info("affiliation_confirmed", user_id=user.id, email=email)
         save_verification(user.id, email, mentorship)
         clear_incomplete_flow(user.id)
 
         await update.message.reply_text(
             "✅ *Account verified under {MENTOR_NAME}!*\n\n"
-            "⏳ Now checking your MT5 trading account...".format(
+            "⏳ Now checking your MT5 trading account and trades...".format(
                 MENTOR_NAME=MENTOR_NAME
             ),
             parse_mode="Markdown",
         )
 
-        # Step 2: MT5 check — pass verified_at to detect NEW accounts only
+        # Step 2: MT5 + trades check
         db_user = get_user(user.id)
         verified_at = db_user["verified_at"] if db_user else None
 
@@ -572,12 +591,21 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                     min_deposit=MT5_MIN_DEPOSIT,
                     verified_at=verified_at,
                 ),
-                timeout=20.0,
+                timeout=25.0,
             )
         except asyncio.TimeoutError:
             logger.error("mt5_check_timeout", email=email)
             is_funded, mt5_account_id, is_new_account = False, None, False
 
+        logger.info(
+            "mt5_check_result",
+            email=email,
+            is_funded=is_funded,
+            mt5_account_id=mt5_account_id,
+            is_new_account=is_new_account,
+        )
+
+        # ✅ All three must be true — no exceptions
         if is_funded and mt5_account_id and is_new_account:
             set_mt5_verified(user.id, mt5_account_id)
             await notify_admin(
@@ -587,6 +615,7 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             await _send_success(update, context, mentorship)
 
         else:
+            # Set grace period deadline
             deadline = (datetime.utcnow() + timedelta(days=MT5_GRACE_DAYS)).isoformat()
             set_mt5_pending(user.id, deadline)
 
@@ -594,10 +623,14 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 context.bot,
                 (
                     "⏳ *Pending MT5 Verification*\n\n"
-                    f"👤 {user.first_name} (@{user.username or 'no username'})\n"
+                    f"👤 {user.first_name} "
+                    f"(@{user.username or 'no username'})\n"
                     f"📧 {email}\n"
                     f"📋 Affiliation: ✅ Confirmed\n"
-                    f"💻 MT5: ❌ {'Old account only' if not is_new_account and mt5_account_id else 'Not found or not funded'}\n"
+                    f"💻 New MT5: "
+                    f"{'✅ Found' if is_new_account else '❌ Not found'}\n"
+                    f"💰 Traded: "
+                    f"{'✅ Yes' if is_funded else '❌ No'}\n"
                     f"⏰ Deadline: {MT5_GRACE_DAYS} days"
                 ),
             )
@@ -614,7 +647,7 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             await _send_mt5_pending(update, mt5_account_id, is_new_account, has_any_mt5)
 
     else:
-        logger.info("verify_not_found", user_id=user.id, email=email)
+        logger.info("affiliation_failed", user_id=user.id, email=email)
         log_failed_attempt(user.id, email)
         context.user_data["last_email"] = email
 
@@ -675,7 +708,7 @@ async def reverify_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if last_email:
         await query.edit_message_text(
-            "⏳ Re-checking `{last_email}`...".format(last_email=last_email),
+            "⏳ Re-checking `{email}`...".format(email=last_email),
             parse_mode="Markdown",
         )
         await _typing(context, query.message.chat_id)
@@ -695,7 +728,6 @@ async def reverify_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         user = query.from_user
 
         if client:
-            logger.info("reverify_success", user_id=user.id, email=last_email)
             context.user_data.pop("last_email", None)
             save_verification(user.id, last_email, mentorship)
 
@@ -709,7 +741,7 @@ async def reverify_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         min_deposit=MT5_MIN_DEPOSIT,
                         verified_at=verified_at,
                     ),
-                    timeout=20.0,
+                    timeout=25.0,
                 )
             except asyncio.TimeoutError:
                 is_funded, mt5_account_id, is_new_account = False, None, False
@@ -749,14 +781,12 @@ async def reverify_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     via_query=True,
                     query=query,
                 )
-
         else:
-            logger.info("reverify_still_not_linked", user_id=user.id, email=last_email)
             await query.edit_message_text(
-                "{last_email} still isn't showing under {MENTOR_NAME}.\n\n"
+                "{email} still isn't showing under {MENTOR_NAME}.\n\n"
                 "Partner changes can take a few minutes. "
-                "Wait a bit and try again, or contact support if it persists.".format(
-                    last_email=last_email, MENTOR_NAME=MENTOR_NAME
+                "Wait a bit and try again.".format(
+                    email=last_email, MENTOR_NAME=MENTOR_NAME
                 ),
                 parse_mode="Markdown",
                 reply_markup=change_partner_guide(),
@@ -804,7 +834,6 @@ async def receive_reverify_email(
         return ConversationHandler.END
 
     if client:
-        logger.info("reverify_success", user_id=user.id, email=email)
         save_verification(user.id, email, mentorship)
 
         db_user = get_user(user.id)
@@ -817,7 +846,7 @@ async def receive_reverify_email(
                     min_deposit=MT5_MIN_DEPOSIT,
                     verified_at=verified_at,
                 ),
-                timeout=20.0,
+                timeout=25.0,
             )
         except asyncio.TimeoutError:
             is_funded, mt5_account_id, is_new_account = False, None, False
@@ -842,15 +871,13 @@ async def receive_reverify_email(
 
             has_any_mt5 = any(a.get("platform", "").lower() == "mt5" for a in accounts)
             await _send_mt5_pending(update, mt5_account_id, is_new_account, has_any_mt5)
-
     else:
         context.user_data["last_email"] = email
         log_failed_attempt(user.id, email)
         await update.message.reply_text(
             "{email} still isn't linked to {MENTOR_NAME}.\n\n"
-            "Please wait a few minutes after the partner change and try again.".format(
-                email=email, MENTOR_NAME=MENTOR_NAME
-            ),
+            "Please wait a few minutes after the partner change "
+            "and try again.".format(email=email, MENTOR_NAME=MENTOR_NAME),
             parse_mode="Markdown",
             reply_markup=change_partner_guide(),
         )
@@ -908,7 +935,6 @@ async def vip_package_selected(
     await query.answer()
 
     package_key = query.data
-
     if package_key == "vip_one_on_one":
         package_label = "One-on-One Mentorship"
         package_price = VIP_ONE_ON_ONE_PRICE
@@ -932,7 +958,10 @@ async def vip_package_selected(
             "💎 *{package_label}* — {package_price}\n\n"
             "Great choice! Let's get your details to proceed.\n\n"
             "What is your *full name*? 👇"
-        ).format(package_label=package_label, package_price=package_price),
+        ).format(
+            package_label=package_label,
+            package_price=package_price,
+        ),
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(
             [[InlineKeyboardButton("❌ Cancel", callback_data="main_menu")]]
@@ -943,7 +972,6 @@ async def vip_package_selected(
 
 async def receive_vip_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     name = update.message.text.strip()
-
     if len(name) < 2:
         await update.message.reply_text("⚠️ Please enter your full name:")
         return AWAITING_VIP_NAME
@@ -1000,7 +1028,11 @@ async def receive_vip_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             "💰 *Price:* {package_price}\n\n"
             "How would you like to make your payment? "
             "Choose a method below 👇"
-        ).format(name=name, package_label=package_label, package_price=package_price),
+        ).format(
+            name=name,
+            package_label=package_label,
+            package_price=package_price,
+        ),
         parse_mode="Markdown",
         reply_markup=vip_payment_methods(),
     )
@@ -1102,7 +1134,6 @@ async def receive_vip_payment_method(
             ]
         ),
     )
-
     return ConversationHandler.END
 
 
@@ -1169,7 +1200,6 @@ async def receive_broker_name(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     name = update.message.text.strip()
-
     if len(name) < 2:
         await update.message.reply_text("⚠️ Please enter your full name:")
         return AWAITING_BROKER_NAME
@@ -1309,7 +1339,6 @@ async def receive_signal_name(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     name = update.message.text.strip()
-
     if len(name) < 2:
         await update.message.reply_text("⚠️ Please enter a valid full name:")
         return AWAITING_SIGNAL_NAME
@@ -1363,7 +1392,8 @@ async def receive_signal_phone(
             "Here are the payment details for your *{package_label}* plan:\n\n"
             "{payment_details}\n\n"
             "📲 Once you've made the payment, tap below to send your proof. "
-            "You'll be added to the signal group shortly after confirmation. 🎉"
+            "You'll be added to the signal group shortly after "
+            "confirmation. 🎉"
         ).format(
             name=name,
             package_label=package_label,
