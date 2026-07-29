@@ -48,6 +48,7 @@ from src.handlers.signals import (
 from src.handlers.verification import (
     beginners_entry,
     advanced_entry,
+    check_mt5_status_callback,
     swing_entry,
     not_registered,
     already_registered,
@@ -281,6 +282,9 @@ def build_app() -> Application:
         CallbackQueryHandler(
             confirm_kick_inactive_callback, pattern="^confirm_kick_inactive$"
         )
+    )
+    app.add_handler(
+        CallbackQueryHandler(check_mt5_status_callback, pattern="^check_mt5_status$")
     )
 
     async def _reminder_job(context) -> None:
