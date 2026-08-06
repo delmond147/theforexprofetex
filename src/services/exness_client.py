@@ -24,6 +24,10 @@ class ExnessClient:
         # FIXED: Managed persistent client session instance to handle connection pooling efficiently
         self._client = httpx.AsyncClient(timeout=15)
 
+    async def close(self) -> None:
+        """Close the HTTP client connection pool."""
+        await self._client.aclose()
+
     # ── Load credentials ──────────────────────────────────────────────────────
 
     def _get_credentials(self) -> tuple[str, str] | tuple[None, None]:
@@ -192,10 +196,12 @@ class ExnessClient:
         """
         logger.warning("got_401_attempting_recovery")
 
-        self._token = None
+        # Try refresh first before clearing token
         if await self._refresh_token():
             return True
 
+        # If refresh fails, try re-login with credentials
+        self._token = None
         if await self._login_with_credentials():
             return True
 

@@ -524,6 +524,8 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     mentorship = context.user_data.get(MENTORSHIP_KEY, "advanced")
 
     if is_rate_limited(user.id):
+        # Clear conversation state
+        context.user_data.clear()
         await update.message.reply_text(
             "⏳ Too many attempts. Please wait 10 minutes and try again.",
             reply_markup=InlineKeyboardMarkup(

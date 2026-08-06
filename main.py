@@ -3,7 +3,6 @@ main.py — Application entry point.
 """
 
 from __future__ import annotations
-from multiprocessing import context
 import os
 import asyncio
 from datetime import time as dtime
@@ -297,42 +296,34 @@ def build_app() -> Application:
         logger.info("mt5_check_job_triggered")
         await run_mt5_check(context.bot)
 
-    # ── Daily activity check — runs at 3AM UTC ────────────────────────────────
+    # ── Scheduled jobs ────────────────────────────────────────────────────────
     if app.job_queue:
+        # Daily activity check — runs at 3AM UTC
         app.job_queue.run_daily(
             _daily_activity_job,
             time=dtime(hour=3, minute=0),
             name="daily_activity_check",
         )
-        logger.info("daily_job_scheduled")
-    else:
-        logger.warning("job_queue_not_available_skipping_scheduler")
 
-    # ---- Reminder job - runs every 4 hours
-    if app.job_queue:
-        app.job_queue.run_daily(
-            _daily_activity_job,
-            time=dtime(hour=3, minute=0),
-            name="daily_activity_check",
-        )
+        # Reminder job — runs every 4 hours
         app.job_queue.run_repeating(
             _reminder_job,
             interval=14400,  # 4 hours in seconds
             first=300,  # first run 5 minutes after bot starts
             name="incomplete_flow_reminder",
         )
-        logger.info("jobs_scheduled")
 
+        # MT5 verification check — runs every 6 hours
+        app.job_queue.run_repeating(
+            _mt5_check_job,
+            interval=21600,  # 6 hours in seconds
+            first=600,  # first run 10 minutes after bot starts
+            name="mt5_verification_check",
+        )
+
+        logger.info("all_jobs_scheduled")
     else:
-        logger.warning("job_queue_not_available")
-
-    app.job_queue.run_repeating(
-        _mt5_check_job,
-        interval=21600,  # 6 hours in seconds
-        first=600,  # first run 10 minutes after bot starts
-        name="mt5_verification_check",
-    )
-    logger.info("jobs_scheduled")
+        logger.warning("job_queue_not_available_skipping_scheduler")
 
     # ── Global error handler ──────────────────────────────────────────────────
     async def error_handler(update, context) -> None:
@@ -357,16 +348,22 @@ def main() -> None:
     logger.info("bot_starting")
     app = build_app()
 
-    if WEBHOOK_URL:
-        logger.info("mode_webhook", url=WEBHOOK_URL, port=WEBHOOK_PORT)
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=int(os.environ.get("PORT", "8080")),
-            webhook_url=WEBHOOK_URL,
-        )
-    else:
-        logger.info("mode_polling")
-        app.run_polling(drop_pending_updates=True)
+    try:
+        if WEBHOOK_URL:
+            logger.info("mode_webhook", url=WEBHOOK_URL, port=WEBHOOK_PORT)
+            app.run_webhook(
+                listen="0.0.0.0",
+                port=int(os.environ.get("PORT", "8080")),
+                webhook_url=WEBHOOK_URL,
+            )
+        else:
+            logger.info("mode_polling")
+            app.run_polling(drop_pending_updates=True)
+    finally:
+        # Cleanup HTTP client connection pool on shutdown
+        import asyncio
+        asyncio.run(exness.close())
+        logger.info("bot_shutdown_cleanup_complete")
 
 
 if __name__ == "__main__":

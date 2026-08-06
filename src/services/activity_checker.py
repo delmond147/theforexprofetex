@@ -122,21 +122,8 @@ async def check_user_activity(email: str) -> tuple[bool, str | None]:
                     "client_active_via_orders",
                     email=email,
                     account=account_id,
-                    data=str(data)[:200],  # log first 200 chars of response
+                    order_count=len(orders),
                 )
-
-                orders = []
-                if isinstance(data, dict):
-                    orders = data.get("data") or []
-
-                if orders:
-                    last_trade = account.get("client_account_last_trade")
-                    logger.info(
-                        "client_active_via_orders",
-                        email=email,
-                        account=account_id,
-                        order_count=len(orders),
-                    )
                 return True, last_trade
 
         logger.info("client_inactive", email=email)
@@ -274,6 +261,11 @@ async def run_activity_check(bot: Bot) -> None:
 
         # Partner switch check
         affiliation = await exness.check_partner_affiliation(email)
+        # Check if API call succeeded and returned valid data
+        if affiliation is None:
+            logger.warning("affiliation_check_failed", email=email, telegram_id=telegram_id)
+            continue  # Skip this user if API call failed
+
         still_linked = (
             isinstance(affiliation, dict) and affiliation.get("affiliation") is True
         )
