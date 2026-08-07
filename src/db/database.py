@@ -141,7 +141,11 @@ def save_verification(
     email: str,
     mentorship_type: str,
 ) -> str:
-    """Save verification and return verified_at timestamp."""
+    """
+    Save affiliation verification and return verified_at timestamp.
+    NOTE: This does NOT set mt5_verified - that must be done via set_mt5_verified()
+    after MT5 account and trading activity are confirmed.
+    """
     now = datetime.utcnow().isoformat()
     with _get_conn() as conn:
         conn.execute(
@@ -151,9 +155,7 @@ def save_verification(
                 mentorship_type = ?,
                 verified_at     = ?,
                 removed         = 0,
-                warning_sent_at = NULL,
-                mt5_verified    = 1,
-                mt5_check_deadline = NULL
+                warning_sent_at = NULL
             WHERE telegram_id = ?
         """,
             (email, mentorship_type, now, telegram_id),
@@ -193,11 +195,18 @@ def get_all_user_ids() -> list[int]:
 
 
 def get_all_verified_users() -> list[sqlite3.Row]:
-    """Return all verified non-removed users for activity checking."""
+    """
+    Return all FULLY verified non-removed users for activity checking.
+    Only includes users who have completed ALL verification steps:
+    - Affiliation confirmed (verified_email IS NOT NULL)
+    - MT5 account verified (mt5_verified = 1)
+    - Not removed (removed = 0)
+    """
     with _get_conn() as conn:
         return conn.execute("""
             SELECT * FROM users
             WHERE verified_email IS NOT NULL
+                AND mt5_verified = 1
                 AND removed = 0
         """).fetchall()
 

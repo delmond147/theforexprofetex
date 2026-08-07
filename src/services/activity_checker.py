@@ -438,6 +438,7 @@ async def run_mt5_check(bot: Bot) -> None:
         if is_funded and mt5_account_id and is_new_account:
             # ✅ New account confirmed and funded — grant full access
             set_mt5_verified(telegram_id, mt5_account_id)
+            clear_incomplete_flow(telegram_id)  # ✅ Clear reminder tracking
 
             group_url = {
                 "beginners": BEGINNERS_GROUP_LINK,
