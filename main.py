@@ -299,10 +299,11 @@ def build_app() -> Application:
     # ── Scheduled jobs ────────────────────────────────────────────────────────
     if app.job_queue:
         # Daily activity check — runs at 3AM UTC
-        app.job_queue.run_daily(
+        app.job_queue.run_repeating(
             _daily_activity_job,
-            time=dtime(hour=3, minute=0),
-            name="daily_activity_check",
+            interval=60 * 60 * 24 * 15,  # 15 days in seconds
+            first=dtime(hour=3, minute=0),
+            name="activity_check_every_15_days",
         )
 
         # Reminder job — runs every 4 hours
@@ -362,6 +363,7 @@ def main() -> None:
     finally:
         # Cleanup HTTP client connection pool on shutdown
         import asyncio
+
         asyncio.run(exness.close())
         logger.info("bot_shutdown_cleanup_complete")
 
