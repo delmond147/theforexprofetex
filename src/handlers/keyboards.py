@@ -11,6 +11,7 @@ from src.core.settings import (
     SWING_TRADING_LINK,
     INNER_CIRCLE_LINK,
     MENTOR_CONTACT,
+    MENTOR_NAME,
     VIP_PRICE,
     SIGNAL_PRICE_1MONTH,
     SIGNAL_PRICE_2MONTH,
@@ -42,16 +43,16 @@ def main_menu() -> InlineKeyboardMarkup:
                 )
             ],
             # [InlineKeyboardButton("🥇 EXNESS VIP", callback_data="vip_signal")],
-            # [
-            #     InlineKeyboardButton(
-            #         "🔄 USING A DIFFERENT BROKER?", callback_data="different_broker"
-            #     )
-            # ],
-            # [
-            #     InlineKeyboardButton(
-            #         "🇬🇧🌏 UK & Asia Traders — Register Here", url=UK_ASIA_BROKER_LINK
-            #     )
-            # ],
+            [
+                InlineKeyboardButton(
+                    "🔄 USING A DIFFERENT BROKER?", callback_data="different_broker"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "🇬🇧🌏 UK & Asia Traders — Register Here", url=UK_ASIA_BROKER_LINK
+                )
+            ],
             [InlineKeyboardButton("💎 VIP MENTORSHIP", callback_data="vip_mentorship")],
             # [
             #     InlineKeyboardButton(
@@ -60,7 +61,7 @@ def main_menu() -> InlineKeyboardMarkup:
             # ],
             [
                 InlineKeyboardButton(
-                    "📢 1BIGMARATHONFX COMMUNITY", url=INNER_CIRCLE_LINK
+                    f"📢 {MENTOR_NAME} COMMUNITY", url=INNER_CIRCLE_LINK
                 )
             ],
             [InlineKeyboardButton("🆘 Get Support", url=MENTOR_CONTACT)],
