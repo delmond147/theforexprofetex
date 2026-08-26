@@ -309,7 +309,6 @@ async def check_mt5_status_callback(
 
     if is_funded and mt5_account_id and is_new_account:
         set_mt5_verified(telegram_id, mt5_account_id)
-        clear_incomplete_flow(telegram_id)  # ✅ Clear on full verification
         await notify_admin(
             context.bot,
             verified_message(
@@ -525,8 +524,6 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     mentorship = context.user_data.get(MENTORSHIP_KEY, "advanced")
 
     if is_rate_limited(user.id):
-        # Clear conversation state
-        context.user_data.clear()
         await update.message.reply_text(
             "⏳ Too many attempts. Please wait 10 minutes and try again.",
             reply_markup=InlineKeyboardMarkup(
@@ -573,7 +570,7 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if client:
         logger.info("affiliation_confirmed", user_id=user.id, email=email)
         save_verification(user.id, email, mentorship)
-        # NOTE: Don't clear incomplete flow yet - user still needs MT5 verification
+        clear_incomplete_flow(user.id)
 
         await update.message.reply_text(
             "✅ *Account verified under {MENTOR_NAME}!*\n\n"
@@ -611,7 +608,6 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         # ✅ All three must be true — no exceptions
         if is_funded and mt5_account_id and is_new_account:
             set_mt5_verified(user.id, mt5_account_id)
-            clear_incomplete_flow(user.id)  # ✅ NOW clear - verification complete!
             await notify_admin(
                 context.bot,
                 verified_message(user.first_name, user.username, email, mentorship),
@@ -752,7 +748,6 @@ async def reverify_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
             if is_funded and mt5_account_id and is_new_account:
                 set_mt5_verified(user.id, mt5_account_id)
-                clear_incomplete_flow(user.id)  # ✅ Clear on full verification
                 await notify_admin(
                     context.bot,
                     verified_message(
@@ -858,7 +853,6 @@ async def receive_reverify_email(
 
         if is_funded and mt5_account_id and is_new_account:
             set_mt5_verified(user.id, mt5_account_id)
-            clear_incomplete_flow(user.id)  # ✅ Clear on full verification
             await notify_admin(
                 context.bot,
                 verified_message(user.first_name, user.username, email, mentorship),

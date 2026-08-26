@@ -208,7 +208,7 @@ async def set_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.info("jwt_token_set", admin=user.id)
 
         # Test it immediately
-        result = await exness.check_partner_affiliation("test@test.com")
+        result = await exness.check_partner_allocation("test@test.com")
         # We just want to confirm no auth error — 404 is fine here
         await context.bot.send_message(
             chat_id=user.id,

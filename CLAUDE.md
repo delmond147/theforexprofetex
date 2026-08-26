@@ -13,6 +13,7 @@
 ## What This Bot Does
 
 This bot automates community management for Exness forex affiliate partners who run trading mentorship communities. It solves the critical problem of partners earning zero commission from members who:
+
 - Register but never create/fund MT5 accounts
 - Switch to different partners
 - Stop trading (inactive accounts)
@@ -60,6 +61,7 @@ Theforexprohetess/
 ## Database Schema
 
 ### `users` table (Core)
+
 ```sql
 telegram_id INTEGER PRIMARY KEY
 username TEXT
@@ -78,6 +80,7 @@ partner_switch_warned_at TEXT        -- Partner switch warning timestamp
 ```
 
 ### Other Tables
+
 - `verification_attempts` - All email verification attempts
 - `bot_config` - Encrypted credentials/config storage
 - `activity_log` - Daily activity check results
@@ -89,6 +92,7 @@ partner_switch_warned_at TEXT        -- Partner switch warning timestamp
 **Base URL:** `https://my.exnessaffiliates.com/api`
 
 ### Authentication Flow
+
 1. Load JWT token from encrypted DB storage
 2. On 401: Try token refresh via `POST /api/v2/auth/token/`
 3. On refresh fail: Re-login with stored encrypted credentials via `POST /api/v2/auth/`
@@ -96,22 +100,24 @@ partner_switch_warned_at TEXT        -- Partner switch warning timestamp
 
 ### Key Endpoints Used
 
-| Endpoint | Method | Purpose | Returns |
-|---|---|---|---|
-| `/api/v2/auth/` | POST | Get JWT token | `{"token": "JWT ..."}` |
-| `/api/partner/affiliation/` | POST | Check email under partner | `{"affiliation": true, "accounts": [...], "client_uid": "..."}` |
-| `/api/reports/clients/accounts/` | GET | Get client accounts + trade data | Array of accounts with platform, volume, dates |
-| `/api/reports/orders/` | GET | Get trade orders for account | Array of orders with dates, volume, rewards |
+| Endpoint                         | Method | Purpose                          | Returns                                                         |
+| -------------------------------- | ------ | -------------------------------- | --------------------------------------------------------------- |
+| `/api/v2/auth/`                  | POST   | Get JWT token                    | `{"token": "JWT ..."}`                                          |
+| `/api/partner/affiliation/`      | POST   | Check email under partner        | `{"affiliation": true, "accounts": [...], "client_uid": "..."}` |
+| `/api/reports/clients/accounts/` | GET    | Get client accounts + trade data | Array of accounts with platform, volume, dates                  |
+| `/api/reports/orders/`           | GET    | Get trade orders for account     | Array of orders with dates, volume, rewards                     |
 
 ### Verification Logic (3-Step Process)
 
 **Step 1: Affiliation Check**
+
 ```
 POST /api/partner/affiliation/ {"email": "user@example.com"}
 → affiliation: true/false
 ```
 
 **Step 2: MT5 Account Check**
+
 ```
 GET /api/reports/clients/accounts/?search=email
 → Check for MT5 platform AND created_date AFTER verified_at
@@ -119,6 +125,7 @@ GET /api/reports/clients/accounts/?search=email
 ```
 
 **Step 3: Funding/Trading Check**
+
 ```
 GET /api/reports/orders/?client_account=123456
 → Check for at least 1 closed order (confirms funded + traded)
@@ -163,6 +170,7 @@ User taps mentorship button (beginners/advanced/swing)
 ### 2. Scheduled Jobs (activity_checker.py)
 
 **Job 1: Daily Activity Check** (3AM UTC)
+
 ```python
 async def run_activity_check(bot: Bot):
     # Step 1: Remove users past partner switch 24h deadline
@@ -173,6 +181,7 @@ async def run_activity_check(bot: Bot):
 ```
 
 **Job 2: MT5 Verification Check** (Every 6 hours)
+
 ```python
 async def run_mt5_check(bot: Bot):
     # Check pending MT5 users
@@ -181,6 +190,7 @@ async def run_mt5_check(bot: Bot):
 ```
 
 **Job 3: Incomplete Flow Reminders** (Every 4 hours)
+
 ```python
 async def run_reminder_check(bot: Bot):
     # Remind users who started but didn't finish flows
@@ -191,16 +201,19 @@ async def run_reminder_check(bot: Bot):
 ### 3. Payment Flows (verification.py)
 
 **VIP Mentorship:**
+
 - Two packages: One-on-One ($1200), Group ($250)
 - Collects: name, phone
 - Shows 3 payment methods with copyable details
 
 **VIP Signal Subscription:**
+
 - 4 packages: 1mo, 2mo, 6mo, 1yr
 - Collects: name, phone
 - Shows payment details + proof submission
 
 **Different Broker Subscription:**
+
 - Monthly fee ($35 default)
 - For users trading with non-Exness brokers
 - Collects: name, phone
@@ -208,6 +221,7 @@ async def run_reminder_check(bot: Bot):
 ## Code Patterns & Standards
 
 ### Configuration Management
+
 ```python
 # ALL config from environment variables in settings.py
 from src.core.settings import BOT_TOKEN, MENTOR_NAME, ADMIN_CHAT_ID
@@ -217,6 +231,7 @@ from src.core.settings import BOT_TOKEN, MENTOR_NAME, ADMIN_CHAT_ID
 ```
 
 ### Database Operations
+
 ```python
 # All DB operations in database.py
 from src.db.database import save_verification, get_user, mark_removed
@@ -226,6 +241,7 @@ from src.db.database import save_verification, get_user, mark_removed
 ```
 
 ### Logging
+
 ```python
 from src.core.logging import logger
 
@@ -235,6 +251,7 @@ logger.error("api_call_failed", endpoint="/affiliation", error=str(e))
 ```
 
 ### Message Formatting
+
 ```python
 # Use Markdown parse_mode
 # Use .format() for dynamic values (NOT f-strings in Markdown)
@@ -250,6 +267,7 @@ await bot.send_message(chat_id=chat_id, text=f"`{value}`", parse_mode="Markdown"
 ```
 
 ### Conversation Handlers
+
 ```python
 # Define states as integers at top of file
 AWAITING_EMAIL = 1
@@ -268,6 +286,7 @@ ConversationHandler(
 ```
 
 ### Security
+
 ```python
 # Credentials encrypted with Fernet before storage
 from src.core.vault import encrypt, decrypt
@@ -283,27 +302,28 @@ await update.message.delete()
 
 ## Admin Commands
 
-| Command | Purpose | Example |
-|---|---|---|
-| `/start` | Main menu | User command |
-| `/help` | Show help text | User command |
-| `/setcredentials` | Guided credential setup | Admin only |
-| `/settoken <jwt>` | Set JWT token manually | Admin only |
-| `/checkapi` | Test API connection | Admin only |
-| `/clearcredentials` | Wipe stored credentials | Admin only |
-| `/cleartoken` | Clear JWT token | Admin only |
-| `/broadcast <msg>` | Message all users | Admin only |
-| `/signal <msg>` | Send trade signal | Admin only |
-| `/announce <msg>` | Send announcement | Admin only |
-| `/checkinactive` | Manual activity check | Admin only |
-| `/listusers` | Show all verified users | Admin only |
-| `/checkstatus` | Show DB state | Admin only |
-| `/kickunverified` | Kick users without MT5 | Admin only |
-| `/mt5status` | Full MT5 status report | Admin only |
+| Command             | Purpose                 | Example      |
+| ------------------- | ----------------------- | ------------ |
+| `/start`            | Main menu               | User command |
+| `/help`             | Show help text          | User command |
+| `/setcredentials`   | Guided credential setup | Admin only   |
+| `/settoken <jwt>`   | Set JWT token manually  | Admin only   |
+| `/checkapi`         | Test API connection     | Admin only   |
+| `/clearcredentials` | Wipe stored credentials | Admin only   |
+| `/cleartoken`       | Clear JWT token         | Admin only   |
+| `/broadcast <msg>`  | Message all users       | Admin only   |
+| `/signal <msg>`     | Send trade signal       | Admin only   |
+| `/announce <msg>`   | Send announcement       | Admin only   |
+| `/checkinactive`    | Manual activity check   | Admin only   |
+| `/listusers`        | Show all verified users | Admin only   |
+| `/checkstatus`      | Show DB state           | Admin only   |
+| `/kickunverified`   | Kick users without MT5  | Admin only   |
+| `/mt5status`        | Full MT5 status report  | Admin only   |
 
 ## Environment Variables (Critical Config)
 
 ### Required
+
 ```bash
 BOT_TOKEN="telegram_bot_token"
 SECRET_KEY="fernet_encryption_key"
@@ -312,6 +332,7 @@ ADMIN_CHAT_ID="telegram_user_id"
 ```
 
 ### API & Groups
+
 ```bash
 ADMIN_USERNAME="telegram_username"
 MENTOR_NAME="1BigMarathon"
@@ -323,6 +344,7 @@ VIP_GROUP_ID="-1001234567890"      # For kicking users
 ```
 
 ### Timing & Thresholds
+
 ```bash
 INACTIVITY_DAYS="30"               # Days before inactivity warning
 WARNING_DAYS="7"                   # Days after warning before removal
@@ -332,6 +354,7 @@ PARTNER_SWITCH_WARNING_HOURS="24"  # Hours before removal after switch
 ```
 
 ### Labels (Multi-client)
+
 ```bash
 LABEL_BEGINNERS="Beginners Mentorship"
 LABEL_ADVANCED="Advanced Mentorship"
@@ -342,6 +365,7 @@ LABEL_DIFFERENT_BROKER="Using Different Broker?"
 ```
 
 ### Pricing
+
 ```bash
 VIP_ONE_ON_ONE_PRICE="$1200"
 VIP_GROUP_PRICE="$250"
@@ -353,6 +377,7 @@ SIGNAL_PRICE_1YEAR="$100"
 ```
 
 ### Payment Methods (3 options)
+
 ```bash
 # Method 1: Bank Transfer
 PAYMENT_METHOD_1_NAME="Bank Transfer"
@@ -375,6 +400,7 @@ PAYMENT_METHOD_3_WALLET="wallet_address_here"
 ## Multi-Client SaaS Design
 
 The entire bot is **zero-code configurable** via environment variables. Deploy a new client in ~30 minutes:
+
 1. Create new Railway project
 2. Set environment variables (60+ vars)
 3. Deploy
@@ -397,27 +423,30 @@ No code changes needed between deployments.
 ### MT5 Verification Requirements (STRICT)
 
 **All three conditions must be true:**
+
 1. Affiliation confirmed under correct partner
 2. MT5 account is NEW (created after `verified_at` date)
 3. Account has traded (at least 1 closed order via `/api/reports/orders/`)
 
 **Why "NEW account" check matters:**
+
 - Old MT5 accounts from previous partners still generate commissions for OLD partner
 - Even if user switches Exness partner, existing MT5 accounts stay with old partner
 - User MUST create NEW MT5 account AFTER switching to new partner
 - This is critical business logic — never skip this check
 
 **Implementation:**
+
 ```python
 # In exness_client.py
 async def check_mt5_funded(email, verified_at):
     accounts = await get_client_accounts(email)
-    
+
     # Check if account was created AFTER verified_at
     created_dt = datetime.fromisoformat(account["client_account_created"])
     verified_dt = datetime.fromisoformat(verified_at)
     is_new = created_dt >= verified_dt
-    
+
     # Only NEW accounts count
     if not is_new:
         return False, account_id, False  # Old account rejected
@@ -426,6 +455,7 @@ async def check_mt5_funded(email, verified_at):
 ### Partner Switch Detection
 
 Runs daily at 3AM UTC:
+
 ```python
 # Re-check affiliation for ALL verified users
 affiliation = await exness.check_partner_affiliation(user["verified_email"])
@@ -460,6 +490,7 @@ except TelegramError as e:
 ### Rate Limiting
 
 Verification attempts limited to prevent spam:
+
 ```python
 from src.middleware.rate_limit import is_rate_limited
 
@@ -471,6 +502,7 @@ if is_rate_limited(user_id):
 ## Testing & Development
 
 ### Local Development
+
 ```bash
 # Install dependencies
 uv sync
@@ -486,6 +518,7 @@ uv run main.py
 ```
 
 ### Database Location
+
 ```bash
 # Development: ./data/theforexprophetess.db
 # Production: /app/data/theforexprophetess.db (Railway volume)
@@ -494,6 +527,7 @@ uv run main.py
 ## Common Tasks
 
 ### Adding a New Mentorship Type
+
 1. Add env vars: `LABEL_NEWTYPE`, `NEWTYPE_GROUP_LINK`
 2. Update `keyboards.py` with new button
 3. Add entry handler in `verification.py`
@@ -502,12 +536,14 @@ uv run main.py
 6. Add to `MENTORSHIP_DISPLAY_NAME` dict
 
 ### Adding a New Admin Command
+
 1. Define handler function in `admin.py` or `signals.py`
 2. Add `_is_admin()` check
 3. Register in `main.py`: `app.add_handler(CommandHandler("cmd", handler))`
 4. Test with admin account
 
 ### Modifying Verification Requirements
+
 1. Update logic in `exness_client.py` → `check_mt5_funded()`
 2. Update messages in `verification.py` → `_send_mt5_pending()`
 3. Update grace period checks in `activity_checker.py` → `run_mt5_check()`
@@ -527,15 +563,19 @@ uv run main.py
 ## Known Issues & Solutions
 
 ### Issue: Token expires frequently
+
 **Solution:** Use `/setcredentials` instead of `/settoken` for auto-refresh
 
 ### Issue: Users report "not linked" but they are
+
 **Solution:** Check partner link is correct, wait 5 minutes after partner switch
 
 ### Issue: MT5 accounts not detected
+
 **Solution:** Ensure account was created AFTER verification date, not before
 
 ### Issue: Job not running
+
 **Solution:** Check Railway logs, verify JobQueue is enabled in main.py
 
 ## Important Business Rules
@@ -550,17 +590,20 @@ uv run main.py
 ## Support & Troubleshooting
 
 ### User can't verify
+
 1. Check email is correct Exness registration email
 2. Verify partner link in env vars is correct
 3. Run `/checkapi` to test API connection
 4. Check logs for API errors
 
 ### User kicked unexpectedly
+
 1. Check `/mt5status` for their trading activity
 2. Check `activity_log` table in database
 3. Review partner affiliation status
 
 ### Admin commands not working
+
 1. Verify `ADMIN_CHAT_ID` is set correctly (numeric user ID, not username)
 2. Check user is sending commands to bot directly (not in group)
 3. Review logs for permission errors
@@ -577,3 +620,4 @@ uv run main.py
 **Bot Version:** Production v1.0  
 **Python Version:** 3.11.11  
 **Framework:** python-telegram-bot 20.7
+**Developer:** Delmond Bongha

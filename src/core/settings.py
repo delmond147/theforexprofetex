@@ -74,10 +74,17 @@ PAYMENT_DETAILS: str = os.environ.get(
     "Bank: Your Bank Name\nAccount Name: Your Name\nAccount Number: 0000000000",
 )
 
+# -- Group Management --------------------------------------------
+
 # ── Group Management ──────────────────────────────────────────────────────────
 VIP_GROUP_INVITE_LINK: str = os.environ.get("VIP_GROUP_INVITE_LINK", "")
 VIP_GROUP_ID: str = os.environ.get("VIP_GROUP_ID", "")  # numeric group ID for kicking
-WARNING_DAYS: int = int(os.environ.get("WARNING_DAYS", "7"))  # days before removal after warning
+INACTIVITY_DAYS: int = int(os.environ.get("INACTIVITY_DAYS", "30"))
+WARNING_DAYS: int = int(
+    os.environ.get("WARNING_DAYS", "7")
+)  # days before removal after warning
+MT5_GRACE_DAYS: int = int(os.environ.get("MT5_GRACE_DAYS", "2"))
+
 
 DIFFERENT_BROKER_PRICE: str = os.environ.get("DIFFERENT_BROKER_PRICE", "$35")
 
@@ -133,6 +140,8 @@ INACTIVITY_DAYS: int = int(os.environ.get("INACTIVITY_DAYS", "30"))
 PARTNER_SWITCH_WARNING_HOURS: int = int(
     os.environ.get("PARTNER_SWITCH_WARNING_HOURS", "24")
 )
+
+MT5_MIN_DEPOSIT: float = float(os.environ.get("MT5_MIN_DEPOSIT", "10.0"))
 
 # # ── Payment Method 4 — Crypto ─────────────────────────────────────────────────
 # PAYMENT_METHOD_4_NAME: str = os.environ.get("PAYMENT_METHOD_4_NAME", "Crypto (USDT)")

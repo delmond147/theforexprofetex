@@ -42,16 +42,16 @@ def main_menu() -> InlineKeyboardMarkup:
                 )
             ],
             # [InlineKeyboardButton("🥇 EXNESS VIP", callback_data="vip_signal")],
-            [
-                InlineKeyboardButton(
-                    "🔄 USING A DIFFERENT BROKER?", callback_data="different_broker"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "🇬🇧🌏 UK & Asia Traders — Register Here", url=UK_ASIA_BROKER_LINK
-                )
-            ],
+            # [
+            #     InlineKeyboardButton(
+            #         "🔄 USING A DIFFERENT BROKER?", callback_data="different_broker"
+            #     )
+            # ],
+            # [
+            #     InlineKeyboardButton(
+            #         "🇬🇧🌏 UK & Asia Traders — Register Here", url=UK_ASIA_BROKER_LINK
+            #     )
+            # ],
             [InlineKeyboardButton("💎 VIP MENTORSHIP", callback_data="vip_mentorship")],
             # [
             #     InlineKeyboardButton(
@@ -60,7 +60,7 @@ def main_menu() -> InlineKeyboardMarkup:
             # ],
             [
                 InlineKeyboardButton(
-                    "📢 THEFOREXPROPHETESS COMMUNITY", url=INNER_CIRCLE_LINK
+                    "📢 1BIGMARATHONFX COMMUNITY", url=INNER_CIRCLE_LINK
                 )
             ],
             [InlineKeyboardButton("🆘 Get Support", url=MENTOR_CONTACT)],
