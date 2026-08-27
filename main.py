@@ -16,6 +16,7 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
+
 from src.core.settings import BOT_TOKEN, WEBHOOK_URL, WEBHOOK_PORT
 from src.core.logging import configure_logging, logger
 from src.handlers.welcome import start
@@ -88,6 +89,9 @@ from src.services.activity_checker import (
     run_mt5_check,
 )
 from src.handlers.group_access import get_group_link
+
+# ── CHANGED: Import Exness client for shutdown cleanup ───────────────────────
+from src.services.exness_client import exness
 
 
 async def help_command(update, context) -> None:
@@ -344,6 +348,7 @@ async def _daily_activity_job(context) -> None:
     await run_activity_check(context.bot)
 
 
+# ── CHANGED: main() function with proper Exness client shutdown ──────────────
 def main() -> None:
     configure_logging(debug=os.environ.get("DEBUG", "").lower() == "true")
     logger.info("bot_starting")
@@ -361,11 +366,25 @@ def main() -> None:
             logger.info("mode_polling")
             app.run_polling(drop_pending_updates=True)
     finally:
-        # Cleanup HTTP client connection pool on shutdown
-        import asyncio
+        # ── CHANGED START: Cleanup Exness HTTP client connection pool on shutdown ──
+        # Previously: asyncio.run(exness.close()) caused NameError because `exness`
+        # was not imported and was not in scope here.
+        #
+        # Now: `exness` is imported from src.services.exness_client at the top of
+        # this file. We create a fresh event loop just for shutdown cleanup to avoid
+        # conflicts with the Telegram app's internal loop.
+        loop = None
+        try:
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(exness.close())
+        except Exception:
+            logger.exception("error_while_closing_exness_client")
+        finally:
+            if loop is not None:
+                loop.close()
 
-        asyncio.run(exness.close())
         logger.info("bot_shutdown_cleanup_complete")
+        # ── CHANGED END ────────────────────────────────────────────────────────────
 
 
 if __name__ == "__main__":

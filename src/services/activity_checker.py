@@ -556,7 +556,7 @@ async def run_mt5_check(bot: Bot) -> None:
                         f"⏳ *Reminder: Fund Your MT5 Account*\n\n"
                         f"Hi {first_name}! We found your new MT5 account "
                         f"but it hasn't been funded or traded on yet.\n\n"
-                        f"Please deposit funds (minimum *${int(MT5_MIN_DEPOSIT)}*) "
+                        f"Please deposit funds (minimum *${float(MT5_MIN_DEPOSIT):.2f}*) "
                         f"and place at least one trade to complete your verification.\n\n"
                         f"⏰ Please complete this before your deadline expires."
                     ),

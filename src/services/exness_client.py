@@ -393,36 +393,38 @@ class ExnessClient:
         verified_at: str | None = None,
     ) -> tuple[bool, str | None, bool]:
         """
-        Check if client has a NEW MT5 account created after verification
-        that has confirmed trading activity (closed trades via orders endpoint).
+        Check if client has a NEW MT5 account with confirmed trading volume.
+
+        A funded account MUST have volume_lots > 0.
+        volume_lots only appears after real trades are placed on a funded account.
+        An account with no deposit will always have volume_lots = 0.
 
         Returns (is_funded_and_traded, mt5_account_id, is_new_account).
-
-        Criteria for full pass:
+        ALL THREE must be satisfied for a True result:
         1. MT5 account exists
-        2. Account was created AFTER verified_at date (new account)
-        3. Has at least one CLOSED trade in orders endpoint (confirms funded + traded)
-
-        All three must be true to return (True, account_id, True).
+        2. Account created on or after verified_at (new account)
+        3. volume_lots > 0 (real trades placed = account was funded)
         """
-        from datetime import datetime
+
+        from datetime import datetime, timedelta
 
         accounts = await self.get_client_accounts(email)
         logger.info(
             "mt5_check_started",
             email=email,
-            account_count=len(accounts),
+            total_accounts=len(accounts),
             verified_at=verified_at,
+            min_deposit_usd=min_deposit,
         )
 
         if not accounts:
             logger.info("mt5_no_accounts_found", email=email)
             return False, None, False
 
-        # Separate MT5 accounts into new and old
-
-        new_mt5_accounts_data = []  # store full account dicts
-        old_mt5_accounts = []
+        new_funded = []  # new MT5 accounts with volume_lots > 0
+        new_unfunded = []  # new MT5 account with volume_lots == 0
+        old_funded = []  # old MT5 account with volume_lots > 0
+        old_unfunded = []  # old MT5 account with volume_lots == 0
 
         for account in accounts:
             platform = str(account.get("platform", "")).lower()
@@ -431,126 +433,167 @@ class ExnessClient:
 
             account_id = str(account.get("client_account") or "")
             created_date = str(account.get("client_account_created") or "")
+            volume_lots = float(account.get("volume_lots") or 0)
+            volume_min_usd = float(account.get("volume_min_usd") or 0)
+            last_trade = account.get("client_account_last_trade") or ""
 
             if not account_id:
                 continue
 
+            # --- Determine if account is NEW
             is_new = False
             if verified_at and created_date:
                 try:
-                    from datetime import timedelta
-
                     created_dt = datetime.fromisoformat(created_date[:10]).date()
                     verified_dt = datetime.fromisoformat(verified_at[:10]).date()
-                    grace_window = timedelta(days=30)
-                    is_new = created_dt >= (verified_dt - grace_window)
-                    logger.info(
-                        "mt5_date_comparison",
-                        account_id=account_id,
-                        created=str(created_dt),
-                        verified=str(verified_dt),
-                        is_new=is_new,
-                    )
+                    # 1-day buffer for timezone edge cases only
+                    is_new = created_dt >= (verified_dt - timedelta(days=1))
                 except Exception as e:
-                    logger.error("mt5_date_parse_error", error=str(e))
-                    is_new = True
+                    logger.error(
+                        "date_parse_error",
+                        created=created_date,
+                        verified=verified_at,
+                        error=str(e),
+                    )
+                    is_new = False
+
             elif not verified_at:
                 is_new = True
+            # ── Funding check ─────────────────────────────────────────────────
+            # volume_lots > 0 is the only reliable proof of funding via this API.
+            # Real trades cannot be placed without a funded account.
+            is_funded = volume_lots > 0
 
-            if is_new:
-                new_mt5_accounts_data.append(account)
+            logger.info(
+                "mt5_account_evaluated",
+                account_id=account_id,
+                created=created_date,
+                volume_lots=volume_lots,
+                volume_min_usd=volume_min_usd,
+                last_trade=last_trade,
+                is_new=is_new,
+                is_funded=is_funded,
+                min_deposit_required=min_deposit,
+            )
+
+            # ── Categorize ────────────────────────────────────────────────────
+            if is_new and is_funded:
+                new_funded.append(account)
+            elif is_new and not is_funded:
+                new_unfunded.append(account)
+            elif not is_new and is_funded:
+                old_funded.append(account)
             else:
-                old_mt5_accounts.append(str(account.get("client_account") or ""))
+                old_unfunded.append(account)
 
         logger.info(
-            "mt5_accounts_categorized",
+            "mt5_categorized",
             email=email,
-            new_count=len(new_mt5_accounts_data),
-            old_count=len(old_mt5_accounts),
+            new_funded=len(new_funded),
+            new_unfunded=len(new_unfunded),
+            old_funded=len(old_funded),
+            old_unfunded=len(old_unfunded),
         )
 
-        # ── Check new accounts for trades ─────────────────────────────────────────
-        for account in new_mt5_accounts_data:
-            account_id = str(account.get("client_account") or "")
-            volume_lots = float(account.get("volume_lots") or 0)
+        # ── Decision — strict priority order ──────────────────────────────────
 
-            # Primary: orders endpoint
-            has_trades = await self._check_account_has_trades(account_id)
+        # CASE 1: New account + funded + traded = FULL PASS ✅
+        if new_funded:
+            best = new_funded[0]
+            account_id = str(best.get("client_account") or "")
+            volume = float(best.get("volume_lots") or 0)
+            logger.info(
+                "mt5_full_pass",
+                email=email,
+                account_id=account_id,
+                volume_lots=volume,
+                min_deposit_usd=min_deposit,
+            )
+            return True, account_id, True
 
-            # Fallback: volume_lots > 0
-            if not has_trades and volume_lots > 0:
-                logger.info(
-                    "mt5_trades_via_volume_fallback",
-                    account_id=account_id,
-                    volume_lots=volume_lots,
-                )
-                has_trades = True
+        # CASE 2: New account exists but volume is 0 = not yet funded ⏳
+        if new_unfunded:
+            account_id = str(new_unfunded[0].get("client_account") or "")
+            logger.info(
+                "mt5_not_yet_funded",
+                email=email,
+                account_id=account_id,
+                min_deposit_required=min_deposit,
+            )
+            return False, account_id, True
 
-            if has_trades:
-                logger.info("mt5_fully_verified", email=email, account_id=account_id)
-                return True, account_id, True
+        # CASE 3: Only old accounts with trades = wrong partner ❌
+        if old_funded:
+            account_id = str(old_funded[0].get("client_account") or "")
+            logger.info(
+                "mt5_old_account_funded_only",
+                email=email,
+                account_id=account_id,
+            )
+            return False, account_id, False
 
-        # ── New accounts found but no trades yet ──────────────────────────────────
-        if new_mt5_accounts_data:
-            first_new_id = str(new_mt5_accounts_data[0].get("client_account") or "")
-            logger.info("mt5_new_no_trades", email=email, account=first_new_id)
-            return False, first_new_id, True
-
-        # ── Only old accounts ─────────────────────────────────────────────────────
-        if old_mt5_accounts:
-            logger.info("mt5_old_only", email=email, accounts=old_mt5_accounts)
-            return False, old_mt5_accounts[0], False
-
-        logger.info("mt5_none_found", email=email)
+        # CASE 4: Old unfunded or nothing at all ❌
+        if old_unfunded:
+            account_id = str(old_unfunded[0].get("client_account") or "")
+            logger.info("mt5_old_account_unfunded", email=email)
+            return False, account_id, False
+        logger.info("mt5_no_accounts_found", email=email)
         return False, None, False
 
-    async def _check_account_has_trades(self, account_id: str) -> bool:
-        """
-        Check if a specific MT5 account has at least one closed trade.
-        """
+    # async def _check_account_has_trades(self, account_id: str) -> bool:
+    #     """
+    #     Check if a specific MT5 account has at least one closed trade.
+    #     """
+    #     try:
+    #         # Try without date filter first — get all orders ever
+    #         data = await self._get(
+    #             "/reports/orders/", params={"client_account": account_id}
+    #         )
+    #         logger.info(
+    #             "orders_full_response",
+    #             account_id=account_id,
+    #             response_type=type(data).__name__,
+    #             data=str(data)[:500],
+    #         )
+
+    #         if data is None:
+    #             logger.warning("orders_returned_none", account_id=account_id)
+    #             return False
+
+    #         if isinstance(data, dict):
+    #             orders = data.get("data") or []
+    #             totals = data.get("totals") or {}
+    #             total_count = int(totals.get("count") or 0)
+
+    #             logger.info(
+    #                 "orders_parsed",
+    #                 account_id=account_id,
+    #                 orders_count=len(orders),
+    #                 totals_count=total_count,
+    #             )
+
+    #             if len(orders) > 0 or total_count > 0:
+    #                 return True
+
+    #         if isinstance(data, list) and len(data) > 0:
+    #             logger.info(
+    #                 "orders_list_format", account_id=account_id, count=len(data)
+    #             )
+    #             return True
+
+    #         logger.info("orders_empty", account_id=account_id)
+    #         return False
+
+    #     except Exception as e:
+    #         logger.error("orders_check_failed", account_id=account_id, error=str(e))
+    #         return False
+    async def close(self) -> None:
+        """Close the underlying HTTP client and release connection pool."""
         try:
-            # Try without date filter first — get all orders ever
-            data = await self._get(
-                "/reports/orders/", params={"client_account": account_id}
-            )
-            logger.info(
-                "orders_full_response",
-                account_id=account_id,
-                response_type=type(data).__name__,
-                data=str(data)[:500],
-            )
-
-            if data is None:
-                logger.warning("orders_returned_none", account_id=account_id)
-                return False
-
-            if isinstance(data, dict):
-                orders = data.get("data") or []
-                totals = data.get("totals") or {}
-                total_count = int(totals.get("count") or 0)
-
-                logger.info(
-                    "orders_parsed",
-                    account_id=account_id,
-                    orders_count=len(orders),
-                    totals_count=total_count,
-                )
-
-                if len(orders) > 0 or total_count > 0:
-                    return True
-
-            if isinstance(data, list) and len(data) > 0:
-                logger.info(
-                    "orders_list_format", account_id=account_id, count=len(data)
-                )
-                return True
-
-            logger.info("orders_empty", account_id=account_id)
-            return False
-
+            await self._client.aclose()
+            logger.info("exness_http_client_closed")
         except Exception as e:
-            logger.error("orders_check_failed", account_id=account_id, error=str(e))
-            return False
+            logger.error("exness_http_client_close_error", error=str(e))
 
 
 exness = ExnessClient()
