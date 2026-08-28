@@ -176,70 +176,85 @@ async def _send_success(
 
 
 async def _send_mt5_pending(
-    update: Update,
-    mt5_account_id: str | None,
-    is_new_account: bool,
-    has_any_mt5: bool,
-    via_query: bool = False,
+    update,
+    mt5_account_id,
+    is_new_account,
+    has_any_mt5,
+    via_query=False,
     query=None,
 ) -> None:
-    """Send appropriate pending MT5 message based on what was found."""
-    if mt5_account_id and not is_new_account:
-        # Has old MT5 account from previous partner
-        msg = (
-            "✅ *Exness account verified!*\n\n"
-            "⚠️ *Action Required — Create a New MT5 Account*\n\n"
-            "We found an existing MT5 account but it was created under "
-            "a *previous partner*. Commissions from trades on this account "
-            "still go to your old partner, not {MENTOR_NAME}.\n\n"
-            "To complete your registration you must:\n"
-            "1️⃣ Log into your *Exness Personal Area*\n"
-            "2️⃣ Go to *My Accounts → Create New Account*\n"
-            "3️⃣ Select *MT5* as the platform\n"
-            "4️⃣ Transfer your funds to the new account\n"
-            "5️⃣ Place at least one trade on the *new* account\n\n"
-            "⚠️ *Important:* The new account must be created *after* "
-            "you switched to {MENTOR_NAME}'s partner link.\n\n"
-            "⏰ You have *{days} days* to complete this.\n\n"
-            "Tap below to check your status once done 👇"
-        ).format(MENTOR_NAME=MENTOR_NAME, days=MT5_GRACE_DAYS)
+    """Send specific message telling member exactly what they need to do."""
 
-    elif mt5_account_id and is_new_account:
-        # Has new MT5 but no trades yet (not funded/traded)
+    if not has_any_mt5 and not mt5_account_id:
+        # No MT5 account at all
         msg = (
             "✅ *Exness account verified!*\n\n"
-            "⚠️ *Almost there!* We found your new MT5 account "
-            "but it doesn't have any completed trades yet.\n\n"
-            "To complete your verification:\n"
-            "1️⃣ Log into your *Exness Personal Area*\n"
-            "2️⃣ Fund your MT5 account (minimum *${min_deposit}*)\n"
-            "3️⃣ Place and complete at least one trade\n\n"
-            "⏰ You have *{days} days* to complete this.\n\n"
-            "Tap below to check your status once funded and traded 👇"
-        ).format(min_deposit=int(MT5_MIN_DEPOSIT), days=MT5_GRACE_DAYS)
-
-    else:
-        # No MT5 account found at all
-        msg = (
-            "✅ *Exness account verified!*\n\n"
-            "⚠️ *One more step required!*\n\n"
-            "You need to create a *new* MT5 trading account on Exness, "
-            "fund it, and place at least one trade to complete verification.\n\n"
-            "Here's how:\n"
-            "1️⃣ Log into your *Exness Personal Area*\n"
-            "2️⃣ Go to *My Accounts → Create Account*\n"
-            "3️⃣ Select *MT5* as the platform\n"
+            "⛔ *Missing: MT5 Trading Account*\n\n"
+            "You don't have an MT5 trading account yet.\n\n"
+            "Here's exactly what you need to do:\n\n"
+            "1️⃣ Log into *my.exness.com*\n"
+            "2️⃣ Go to *My Accounts → Open New Account*\n"
+            "3️⃣ Choose *MT5* as the platform\n"
             "4️⃣ Fund your account (minimum *${min_deposit}*)\n"
-            "5️⃣ Place at least one trade\n\n"
-            "⚠️ *Important:* Create this account *after* switching to "
-            "{MENTOR_NAME}'s partner link.\n\n"
-            "⏰ You have *{days} days* to complete this.\n\n"
-            "Tap below to check your status once done 👇"
+            "5️⃣ Place at least one trade\n"
+            "6️⃣ Come back and tap *Check MT5 Status*\n\n"
+            "⚠️ *Important:* Create the account under *{MENTOR_NAME}'s* "
+            "partner link — if you already switched, create a fresh account.\n\n"
+            "⏰ You have *{days} days* to complete this."
         ).format(
             min_deposit=int(MT5_MIN_DEPOSIT),
             MENTOR_NAME=MENTOR_NAME,
             days=MT5_GRACE_DAYS,
         )
+
+    elif mt5_account_id and not is_new_account:
+        # Has MT5 but it's old (from previous partner)
+        msg = (
+            "✅ *Exness account verified!*\n\n"
+            "⛔ *Missing: New MT5 Account Under {MENTOR_NAME}*\n\n"
+            "We found an MT5 account but it was created under a "
+            "*previous partner*. Trades on this account earn commission "
+            "for your old partner, not {MENTOR_NAME}.\n\n"
+            "Here's exactly what you need to do:\n\n"
+            "1️⃣ Log into *my.exness.com*\n"
+            "2️⃣ Go to *My Accounts → Open New Account*\n"
+            "3️⃣ Choose *MT5* as the platform\n"
+            "4️⃣ Transfer your funds to the new account\n"
+            "5️⃣ Place at least one trade on the *new* account\n"
+            "6️⃣ Come back and tap *Check MT5 Status*\n\n"
+            "⏰ You have *{days} days* to complete this."
+        ).format(MENTOR_NAME=MENTOR_NAME, days=MT5_GRACE_DAYS)
+
+    elif mt5_account_id and is_new_account:
+        # Has new MT5 but volume_lots = 0 (not funded/traded)
+        msg = (
+            "✅ *Exness account verified!*\n\n"
+            "⛔ *Missing: Fund Your MT5 Account and Place a Trade*\n\n"
+            "We found your new MT5 account but it has *no trading activity*.\n\n"
+            "Your account will not be verified until:\n"
+            "✅ You deposit at least *${min_deposit}*\n"
+            "✅ You place at least *one trade*\n\n"
+            "Here's how:\n\n"
+            "1️⃣ Log into *my.exness.com*\n"
+            "2️⃣ Go to *My Accounts* and find your MT5 account\n"
+            "3️⃣ Click *Deposit* and add at least *${min_deposit}*\n"
+            "4️⃣ Open the MT5 platform and place one trade\n"
+            "5️⃣ Come back and tap *Check MT5 Status*\n\n"
+            "⏰ You have *{days} days* to complete this.\n\n"
+            "💡 Even a micro lot trade on any pair counts."
+        ).format(
+            min_deposit=int(MT5_MIN_DEPOSIT),
+            days=MT5_GRACE_DAYS,
+        )
+
+    else:
+        msg = (
+            "✅ *Exness account verified!*\n\n"
+            "⛔ *MT5 verification incomplete.*\n\n"
+            "Please create a new MT5 account, fund it (minimum *${min_deposit}*), "
+            "and place at least one trade.\n\n"
+            "⏰ You have *{days} days* to complete this."
+        ).format(min_deposit=int(MT5_MIN_DEPOSIT), days=MT5_GRACE_DAYS)
 
     if via_query and query:
         await query.edit_message_text(
@@ -249,6 +264,82 @@ async def _send_mt5_pending(
         await update.message.reply_text(
             msg, parse_mode="Markdown", reply_markup=pending_mt5_keyboard()
         )
+
+
+# async def _send_mt5_pending(
+#     update,
+#     mt5_account_id,
+#     is_new_account,
+#     has_any_mt5,
+#     via_query,
+#     query=None,
+# ) -> None:
+#     """Send appropriate pending MT5 message based on what was found."""
+#     if mt5_account_id and not is_new_account:
+#         # Has old MT5 account from previous partner
+#         msg = (
+#             "✅ *Exness account verified!*\n\n"
+#             "⚠️ *Action Required — Create a New MT5 Account*\n\n"
+#             "We found an existing MT5 account but it was created under "
+#             "a *previous partner*. Commissions from trades on this account "
+#             "still go to your old partner, not {MENTOR_NAME}.\n\n"
+#             "To complete your registration you must:\n"
+#             "1️⃣ Log into your *Exness Personal Area*\n"
+#             "2️⃣ Go to *My Accounts → Create New Account*\n"
+#             "3️⃣ Select *MT5* as the platform\n"
+#             "4️⃣ Transfer your funds to the new account\n"
+#             "5️⃣ Place at least one trade on the *new* account\n\n"
+#             "⚠️ *Important:* The new account must be created *after* "
+#             "you switched to {MENTOR_NAME}'s partner link.\n\n"
+#             "⏰ You have *{days} days* to complete this.\n\n"
+#             "Tap below to check your status once done 👇"
+#         ).format(MENTOR_NAME=MENTOR_NAME, days=MT5_GRACE_DAYS)
+
+#     elif mt5_account_id and is_new_account:
+#         # Has new MT5 but no trades yet (not funded/traded)
+#         msg = (
+#             "✅ *Exness account verified!*\n\n"
+#             "⚠️ *Almost there!* We found your new MT5 account "
+#             "but it doesn't have any completed trades yet.\n\n"
+#             "To complete your verification:\n"
+#             "1️⃣ Log into your *Exness Personal Area*\n"
+#             "2️⃣ Fund your MT5 account (minimum *${min_deposit}*)\n"
+#             "3️⃣ Place and complete at least one trade\n\n"
+#             "⏰ You have *{days} days* to complete this.\n\n"
+#             "Tap below to check your status once funded and traded 👇"
+#         ).format(min_deposit=int(MT5_MIN_DEPOSIT), days=MT5_GRACE_DAYS)
+
+#     else:
+#         # No MT5 account found at all
+#         msg = (
+#             "✅ *Exness account verified!*\n\n"
+#             "⚠️ *One more step required!*\n\n"
+#             "You need to create a *new* MT5 trading account on Exness, "
+#             "fund it, and place at least one trade to complete verification.\n\n"
+#             "Here's how:\n"
+#             "1️⃣ Log into your *Exness Personal Area*\n"
+#             "2️⃣ Go to *My Accounts → Create Account*\n"
+#             "3️⃣ Select *MT5* as the platform\n"
+#             "4️⃣ Fund your account (minimum *${min_deposit}*)\n"
+#             "5️⃣ Place at least one trade\n\n"
+#             "⚠️ *Important:* Create this account *after* switching to "
+#             "{MENTOR_NAME}'s partner link.\n\n"
+#             "⏰ You have *{days} days* to complete this.\n\n"
+#             "Tap below to check your status once done 👇"
+#         ).format(
+#             min_deposit=int(MT5_MIN_DEPOSIT),
+#             MENTOR_NAME=MENTOR_NAME,
+#             days=MT5_GRACE_DAYS,
+#         )
+
+#     if via_query and query:
+#         await query.edit_message_text(
+#             msg, parse_mode="Markdown", reply_markup=pending_mt5_keyboard()
+#         )
+#     else:
+#         await update.message.reply_text(
+#             msg, parse_mode="Markdown", reply_markup=pending_mt5_keyboard()
+#         )
 
 
 # ── MT5 status check callback ─────────────────────────────────────────────────
@@ -584,6 +675,11 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         db_user = get_user(user.id)
         verified_at = db_user["verified_at"] if db_user else None
 
+        logger.info(
+            "mt5_check_starting", user_id=user.id, email=email, verified_at=verified_at
+        )
+        if not verified_at:
+            logger.info("verified_at_missing_after_save", user_id=user.id, email=email)
         try:
             is_funded, mt5_account_id, is_new_account = await asyncio.wait_for(
                 exness.check_mt5_funded(

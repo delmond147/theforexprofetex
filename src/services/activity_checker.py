@@ -421,13 +421,13 @@ async def run_mt5_check(bot: Bot) -> None:
         )
         await asyncio.sleep(0.5)
 
-    # Check pending users who might now be funded
-    for user in get_pending_mt5_users():
-        telegram_id = user["telegram_id"]
-        email = user["verified_email"]
-        first_name = user["first_name"] or "Trader"
-        mentorship = user["mentorship_type"] or "advanced"
-        verified_at = user["verified_at"]  # needed to check if MT5 is NEW
+        # Check pending users who might now be funded
+        for user in get_pending_mt5_users():
+            telegram_id = user["telegram_id"]
+            email = user["verified_email"]
+            first_name = user["first_name"] or "Trader"
+            mentorship = user["mentorship_type"] or "advanced"
+            verified_at = user["verified_at"]
 
         try:
             is_funded, mt5_account_id, is_new_account = await asyncio.wait_for(
@@ -444,9 +444,8 @@ async def run_mt5_check(bot: Bot) -> None:
             continue
 
         if is_funded and mt5_account_id and is_new_account:
-            # ✅ New account confirmed and funded — grant full access
+            # ✅ Now passes — grant access
             set_mt5_verified(telegram_id, mt5_account_id)
-
             group_url = {
                 "beginners": BEGINNERS_GROUP_LINK,
                 "advanced": ADVANCED_GROUP_LINK,
@@ -458,9 +457,9 @@ async def run_mt5_check(bot: Bot) -> None:
                     chat_id=telegram_id,
                     text=(
                         f"🎉 *MT5 Verification Complete!*\n\n"
-                        f"Hi {first_name}! Your new MT5 account is now active "
-                        f"and funded. You're all set! ✅\n\n"
-                        f"Tap below to get your personal group link 👇"
+                        f"Hi {first_name}! Your new MT5 account is funded "
+                        f"and active. You're all set! ✅\n\n"
+                        f"Tap below to get your group link 👇"
                     ),
                     parse_mode="Markdown",
                     reply_markup=InlineKeyboardMarkup(
@@ -485,50 +484,39 @@ async def run_mt5_check(bot: Bot) -> None:
 
             await notify_admin_message(
                 bot,
-                (
-                    f"✅ *MT5 Verified — Group Access Granted*\n\n"
-                    f"👤 {first_name} (@{user['username'] or 'no username'})\n"
-                    f"📧 {email}\n"
-                    f"💻 New MT5 Account: {mt5_account_id}"
-                ),
+                f"✅ *MT5 Verified — Access Granted*\n\n"
+                f"👤 {first_name} (@{user['username'] or 'no username'})\n"
+                f"📧 {email}\n"
+                f"💻 MT5: {mt5_account_id}",
             )
 
-        elif is_funded and mt5_account_id and not is_new_account:
-            # ❌ Has funded MT5 but it's an OLD account from previous partner
-            logger.info(
-                "mt5_old_account_detected", telegram_id=telegram_id, email=email
-            )
+        elif not is_funded and mt5_account_id and is_new_account:
+            # ⏳ New account found but still no trades/funding
             try:
                 await bot.send_message(
                     chat_id=telegram_id,
                     text=(
-                        f"⚠️ *Reminder: New MT5 Account Required*\n\n"
-                        f"Hi {first_name}! We can see your existing MT5 account "
-                        f"but it was created under a *previous partner*.\n\n"
-                        f"Trades on this old account generate commissions for your "
-                        f"old partner, not {MENTOR_NAME}.\n\n"
-                        f"You must create a *new* MT5 account after switching to "
-                        f"{MENTOR_NAME}'s partner link:\n\n"
-                        f"1️⃣ Log into your Exness Personal Area\n"
-                        f"2️⃣ Go to *My Accounts → Create New Account*\n"
-                        f"3️⃣ Select *MT5* as the platform\n"
-                        f"4️⃣ Transfer your funds to the new account\n"
-                        f"5️⃣ Place at least one trade on the new account\n\n"
-                        f"⏰ Please complete this before your deadline expires."
+                        f"⏰ *Reminder: Fund Your MT5 Account*\n\n"
+                        f"Hi {first_name}! We checked again and your MT5 "
+                        f"account still has no trading activity.\n\n"
+                        f"You still need to:\n"
+                        f"✅ Deposit at least *${int(MT5_MIN_DEPOSIT)}* "
+                        f"into your MT5 account\n"
+                        f"✅ Place at least *one trade*\n\n"
+                        f"Once done, tap below to check your status 👇"
                     ),
                     parse_mode="Markdown",
                     reply_markup=InlineKeyboardMarkup(
                         [
                             [
                                 InlineKeyboardButton(
-                                    "🔗 Open Exness Personal Area",
-                                    url="https://my.exness.com",
+                                    "✅ Check MT5 Status",
+                                    callback_data="check_mt5_status",
                                 )
                             ],
                             [
                                 InlineKeyboardButton(
-                                    "✅ Check MT5 Status",
-                                    callback_data="check_mt5_status",
+                                    "🔗 Open Exness", url="https://my.exness.com"
                                 )
                             ],
                             [
@@ -541,62 +529,275 @@ async def run_mt5_check(bot: Bot) -> None:
                 )
             except TelegramError as e:
                 logger.error(
-                    "mt5_old_account_notify_failed",
+                    "mt5_reminder_failed", telegram_id=telegram_id, error=str(e)
+                )
+
+        elif mt5_account_id and not is_new_account:
+            # ❌ Still using old account
+            try:
+                await bot.send_message(
+                    chat_id=telegram_id,
+                    text=(
+                        f"⏰ *Reminder: Create New MT5 Account*\n\n"
+                        f"Hi {first_name}! We still see your old MT5 account "
+                        f"but no new one under {MENTOR_NAME}.\n\n"
+                        f"You must:\n"
+                        f"1️⃣ Create a *new* MT5 account on Exness\n"
+                        f"2️⃣ Fund it with at least *${int(MT5_MIN_DEPOSIT)}*\n"
+                        f"3️⃣ Place at least one trade\n\n"
+                        f"Your deadline is approaching. ⏰"
+                    ),
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(
+                        [
+                            [
+                                InlineKeyboardButton(
+                                    "✅ Check MT5 Status",
+                                    callback_data="check_mt5_status",
+                                )
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    "🔗 Open Exness", url="https://my.exness.com"
+                                )
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    "🆘 Get Support", url=MENTOR_CONTACT
+                                )
+                            ],
+                        ]
+                    ),
+                )
+            except TelegramError as e:
+                logger.error(
+                    "mt5_old_reminder_failed", telegram_id=telegram_id, error=str(e)
+                )
+
+        else:
+            # No MT5 at all
+            try:
+                await bot.send_message(
+                    chat_id=telegram_id,
+                    text=(
+                        f"⏰ *Reminder: Create Your MT5 Account*\n\n"
+                        f"Hi {first_name}! We couldn't find any MT5 account "
+                        f"under your email.\n\n"
+                        f"You need to:\n"
+                        f"1️⃣ Log into *my.exness.com*\n"
+                        f"2️⃣ Open a new *MT5* account\n"
+                        f"3️⃣ Fund it with at least *${int(MT5_MIN_DEPOSIT)}*\n"
+                        f"4️⃣ Place at least one trade\n\n"
+                        f"Your deadline is approaching. ⏰"
+                    ),
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(
+                        [
+                            [
+                                InlineKeyboardButton(
+                                    "✅ Check MT5 Status",
+                                    callback_data="check_mt5_status",
+                                )
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    "🔗 Open Exness", url="https://my.exness.com"
+                                )
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    "🆘 Get Support", url=MENTOR_CONTACT
+                                )
+                            ],
+                        ]
+                    ),
+                )
+            except TelegramError as e:
+                logger.error(
+                    "mt5_no_account_reminder_failed",
                     telegram_id=telegram_id,
                     error=str(e),
                 )
 
-        elif not is_funded and mt5_account_id and is_new_account:
-            # ⏳ New account exists but not yet funded/traded
-            logger.info("mt5_new_unfunded", telegram_id=telegram_id, email=email)
-            try:
-                await bot.send_message(
-                    chat_id=telegram_id,
-                    text=(
-                        f"⏳ *Reminder: Fund Your MT5 Account*\n\n"
-                        f"Hi {first_name}! We found your new MT5 account "
-                        f"but it hasn't been funded or traded on yet.\n\n"
-                        f"Please deposit funds (minimum *${float(MT5_MIN_DEPOSIT):.2f}*) "
-                        f"and place at least one trade to complete your verification.\n\n"
-                        f"⏰ Please complete this before your deadline expires."
-                    ),
-                    parse_mode="Markdown",
-                    reply_markup=InlineKeyboardMarkup(
-                        [
-                            [
-                                InlineKeyboardButton(
-                                    "🔗 Open Exness Personal Area",
-                                    url="https://my.exness.com",
-                                )
-                            ],
-                            [
-                                InlineKeyboardButton(
-                                    "✅ Check MT5 Status",
-                                    callback_data="check_mt5_status",
-                                )
-                            ],
-                            [
-                                InlineKeyboardButton(
-                                    "🆘 Get Support", url=MENTOR_CONTACT
-                                )
-                            ],
-                        ]
-                    ),
-                )
-            except TelegramError as e:
-                logger.error(
-                    "mt5_unfunded_notify_failed", telegram_id=telegram_id, error=str(e)
-                )
-
-        else:
-            # No MT5 found at all
-            logger.info(
-                "mt5_not_found_on_recheck", telegram_id=telegram_id, email=email
-            )
-
         await asyncio.sleep(0.3)
 
     logger.info("mt5_check_complete", granted=granted, removed=removed)
+
+    # for user in get_pending_mt5_users():
+    #     telegram_id = user["telegram_id"]
+    #     email = user["verified_email"]
+    #     first_name = user["first_name"] or "Trader"
+    #     mentorship = user["mentorship_type"] or "advanced"
+    #     verified_at = user["verified_at"]  # needed to check if MT5 is NEW
+
+    #     try:
+    #         is_funded, mt5_account_id, is_new_account = await asyncio.wait_for(
+    #             exness.check_mt5_funded(
+    #                 email,
+    #                 min_deposit=MT5_MIN_DEPOSIT,
+    #                 verified_at=verified_at,
+    #             ),
+    #             timeout=20.0,
+    #         )
+    #     except asyncio.TimeoutError:
+    #         logger.error("mt5_recheck_timeout", email=email)
+    #         await asyncio.sleep(0.3)
+    #         continue
+
+    #     if is_funded and mt5_account_id and is_new_account:
+    #         # ✅ New account confirmed and funded — grant full access
+    #         set_mt5_verified(telegram_id, mt5_account_id)
+
+    #         group_url = {
+    #             "beginners": BEGINNERS_GROUP_LINK,
+    #             "advanced": ADVANCED_GROUP_LINK,
+    #             "swing": SWING_TRADING_LINK,
+    #         }.get(mentorship, ADVANCED_GROUP_LINK)
+
+    #         try:
+    #             await bot.send_message(
+    #                 chat_id=telegram_id,
+    #                 text=(
+    #                     f"🎉 *MT5 Verification Complete!*\n\n"
+    #                     f"Hi {first_name}! Your new MT5 account is now active "
+    #                     f"and funded. You're all set! ✅\n\n"
+    #                     f"Tap below to get your personal group link 👇"
+    #                 ),
+    #                 parse_mode="Markdown",
+    #                 reply_markup=InlineKeyboardMarkup(
+    #                     [
+    #                         [
+    #                             InlineKeyboardButton(
+    #                                 "🎉 Get My Group Link",
+    #                                 callback_data=f"get_group_link_{mentorship}",
+    #                             )
+    #                         ],
+    #                         [
+    #                             InlineKeyboardButton(
+    #                                 "🏠 Main Menu", callback_data="main_menu"
+    #                             )
+    #                         ],
+    #                     ]
+    #                 ),
+    #             )
+    #             granted += 1
+    #         except TelegramError as e:
+    #             logger.error("mt5_grant_failed", telegram_id=telegram_id, error=str(e))
+
+    #         await notify_admin_message(
+    #             bot,
+    #             (
+    #                 f"✅ *MT5 Verified — Group Access Granted*\n\n"
+    #                 f"👤 {first_name} (@{user['username'] or 'no username'})\n"
+    #                 f"📧 {email}\n"
+    #                 f"💻 New MT5 Account: {mt5_account_id}"
+    #             ),
+    #         )
+
+    #     elif is_funded and mt5_account_id and not is_new_account:
+    #         # ❌ Has funded MT5 but it's an OLD account from previous partner
+    #         logger.info(
+    #             "mt5_old_account_detected", telegram_id=telegram_id, email=email
+    #         )
+    #         try:
+    #             await bot.send_message(
+    #                 chat_id=telegram_id,
+    #                 text=(
+    #                     f"⚠️ *Reminder: New MT5 Account Required*\n\n"
+    #                     f"Hi {first_name}! We can see your existing MT5 account "
+    #                     f"but it was created under a *previous partner*.\n\n"
+    #                     f"Trades on this old account generate commissions for your "
+    #                     f"old partner, not {MENTOR_NAME}.\n\n"
+    #                     f"You must create a *new* MT5 account after switching to "
+    #                     f"{MENTOR_NAME}'s partner link:\n\n"
+    #                     f"1️⃣ Log into your Exness Personal Area\n"
+    #                     f"2️⃣ Go to *My Accounts → Create New Account*\n"
+    #                     f"3️⃣ Select *MT5* as the platform\n"
+    #                     f"4️⃣ Transfer your funds to the new account\n"
+    #                     f"5️⃣ Place at least one trade on the new account\n\n"
+    #                     f"⏰ Please complete this before your deadline expires."
+    #                 ),
+    #                 parse_mode="Markdown",
+    #                 reply_markup=InlineKeyboardMarkup(
+    #                     [
+    #                         [
+    #                             InlineKeyboardButton(
+    #                                 "🔗 Open Exness Personal Area",
+    #                                 url="https://my.exness.com",
+    #                             )
+    #                         ],
+    #                         [
+    #                             InlineKeyboardButton(
+    #                                 "✅ Check MT5 Status",
+    #                                 callback_data="check_mt5_status",
+    #                             )
+    #                         ],
+    #                         [
+    #                             InlineKeyboardButton(
+    #                                 "🆘 Get Support", url=MENTOR_CONTACT
+    #                             )
+    #                         ],
+    #                     ]
+    #                 ),
+    #             )
+    #         except TelegramError as e:
+    #             logger.error(
+    #                 "mt5_old_account_notify_failed",
+    #                 telegram_id=telegram_id,
+    #                 error=str(e),
+    #             )
+
+    #     elif not is_funded and mt5_account_id and is_new_account:
+    #         # ⏳ New account exists but not yet funded/traded
+    #         logger.info("mt5_new_unfunded", telegram_id=telegram_id, email=email)
+    #         try:
+    #             await bot.send_message(
+    #                 chat_id=telegram_id,
+    #                 text=(
+    #                     f"⏳ *Reminder: Fund Your MT5 Account*\n\n"
+    #                     f"Hi {first_name}! We found your new MT5 account "
+    #                     f"but it hasn't been funded or traded on yet.\n\n"
+    #                     f"Please deposit funds (minimum *${float(MT5_MIN_DEPOSIT):.2f}*) "
+    #                     f"and place at least one trade to complete your verification.\n\n"
+    #                     f"⏰ Please complete this before your deadline expires."
+    #                 ),
+    #                 parse_mode="Markdown",
+    #                 reply_markup=InlineKeyboardMarkup(
+    #                     [
+    #                         [
+    #                             InlineKeyboardButton(
+    #                                 "🔗 Open Exness Personal Area",
+    #                                 url="https://my.exness.com",
+    #                             )
+    #                         ],
+    #                         [
+    #                             InlineKeyboardButton(
+    #                                 "✅ Check MT5 Status",
+    #                                 callback_data="check_mt5_status",
+    #                             )
+    #                         ],
+    #                         [
+    #                             InlineKeyboardButton(
+    #                                 "🆘 Get Support", url=MENTOR_CONTACT
+    #                             )
+    #                         ],
+    #                     ]
+    #                 ),
+    #             )
+    #         except TelegramError as e:
+    #             logger.error(
+    #                 "mt5_unfunded_notify_failed", telegram_id=telegram_id, error=str(e)
+    #             )
+
+    #     else:
+    #         # No MT5 found at all
+    #         logger.info(
+    #             "mt5_not_found_on_recheck", telegram_id=telegram_id, email=email
+    #         )
+
+    #     await asyncio.sleep(0.3)
+
+    # logger.info("mt5_check_complete", granted=granted, removed=removed)
 
 
 async def run_reminder_check(bot: Bot) -> None:
