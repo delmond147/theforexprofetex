@@ -3,7 +3,7 @@ welcome.py — /start command. Greets new users warmly, welcomes back verified u
 """
 
 from __future__ import annotations
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from src.handlers.keyboards import (
@@ -13,7 +13,12 @@ from src.handlers.keyboards import (
     pending_mt5_keyboard,
 )
 from src.core.logging import logger
-from src.core.settings import BEGINNERS_GROUP_LINK, ADVANCED_GROUP_LINK, MENTOR_NAME
+from src.core.settings import (
+    BEGINNERS_GROUP_LINK,
+    ADVANCED_GROUP_LINK,
+    MENTOR_CONTACT,
+    MENTOR_NAME,
+)
 from src.db.database import upsert_user, get_user
 
 # Exported so menu.py can import it
@@ -47,6 +52,37 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     upsert_user(user.id, user.username, user.first_name)
 
     db_user = get_user(user.id)
+
+    # ── Returning kicked user ─────────────────────────────────────────────
+    if db_user and db_user["verified_email"] and (db_user["removed"] or 0) == 1:
+        await update.message.reply_text(
+            "👋 *Welcome back, {name}!*\n\n"
+            "Your group access was previously removed.\n\n"
+            "To rejoin, your account will be re-checked:\n"
+            "✅ Still under {MENTOR_NAME}'s partner link\n"
+            "✅ MT5 account still actively trading\n\n"
+            "Tap below to start the re-verification 👇".format(
+                name=name, MENTOR_NAME=MENTOR_NAME
+            ),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔄 Re-verify My Account",
+                            callback_data="already_registered",
+                        )
+                    ],
+                    [InlineKeyboardButton("🆘 Get Support", url=MENTOR_CONTACT)],
+                ]
+            ),
+        )
+        return
+
+    # ── Existing verified user ────────────────────────────────────────────
+    if db_user and db_user["verified_email"]:
+        if (db_user["mt5_verified"] or 0) == 0:
+            ...  # rest unchanged
 
     if db_user and db_user["verified_email"]:
         if (db_user["mt5_verified"] or 0) == 0:

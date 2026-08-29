@@ -64,6 +64,7 @@ from src.core.settings import (
 
 from src.core.logging import logger
 from src.db.database import (
+    restore_user,
     save_verification,
     log_failed_attempt,
     get_user,
@@ -642,6 +643,127 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     await update.message.reply_text("⏳ Checking your account...")
 
     logger.info("verify_attempt", user_id=user.id, email=email, mentorship=mentorship)
+
+    # ── Check if this is a returning kicked user ──────────────────────────
+    # If they already have verified_email + mt5_account_id set,
+    # they don't need to reverify MT5 — just check affiliation + trading
+    existing = get_user(user.id)
+
+    if (
+        existing
+        and existing["verified_email"]
+        and existing["mt5_account_id"]
+        and (existing["mt5_verified"] or 0) == 1
+        and (existing["removed"] or 0) == 1
+        and existing["verified_email"].lower() == email.lower()
+    ):
+        logger.info("returning_kicked_user_detected", user_id=user.id, email=email)
+
+        await update.message.reply_text(
+            "⏳ Checking your account status...",
+            parse_mode="Markdown",
+        )
+
+        try:
+            can_rejoin, reason = await asyncio.wait_for(
+                exness.check_reentry_eligibility(
+                    email,
+                    existing["mt5_account_id"],
+                ),
+                timeout=25.0,
+            )
+        except asyncio.TimeoutError:
+            await update.message.reply_text(
+                "⏳ Check timed out. Please try again.",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "🔙 Back to Menu", callback_data="main_menu"
+                            )
+                        ]
+                    ]
+                ),
+            )
+            return ConversationHandler.END
+
+        if can_rejoin:
+            # ✅ Clear removed flag and grant access
+            # with __import__(
+            #     "src.db.database", fromlist=["_get_conn"]
+            # )._get_conn() as conn:
+            #     conn.execute(
+            #         "UPDATE users SET removed=0, warning_sent_at=NULL "
+            #         "WHERE telegram_id=?",
+            #         (user.id,),
+            #     )
+            restore_user(user.id)
+
+            await notify_admin(
+                context.bot,
+                (
+                    "🔄 *Returning Member Re-verified*\n\n"
+                    f"👤 {user.first_name} "
+                    f"(@{user.username or 'no username'})\n"
+                    f"📧 {email}\n"
+                    f"💻 MT5: {existing['mt5_account_id']}\n"
+                    f"✅ Still under partner + actively trading"
+                ),
+            )
+            await _send_success(update, context, mentorship)
+
+        elif reason == "partner_switched":
+            await update.message.reply_text(
+                "❌ *Your Exness account is not under {MENTOR_NAME}.*\n\n"
+                "It looks like you switched to a different partner.\n\n"
+                "To rejoin, you need to switch back to "
+                "{MENTOR_NAME}'s partner link and try again.".format(
+                    MENTOR_NAME=MENTOR_NAME
+                ),
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [InlineKeyboardButton("🔗 Switch Back", url=MENTOR_CONTACT)],
+                        [
+                            InlineKeyboardButton(
+                                "🔙 Back to Menu", callback_data="main_menu"
+                            )
+                        ],
+                    ]
+                ),
+            )
+
+        else:
+            # reason == "no_trades" — not trading
+            await update.message.reply_text(
+                "⚠️ *Account inactive — no recent trades.*\n\n"
+                "Your account is under {MENTOR_NAME} and your MT5 "
+                "account exists, but we couldn't detect any recent "
+                "trading activity.\n\n"
+                "Please place at least one trade on your MT5 account "
+                "then tap /start to try again.".format(MENTOR_NAME=MENTOR_NAME),
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "🔗 Open Exness", url="https://my.exness.com"
+                            )
+                        ],
+                        [InlineKeyboardButton("🆘 Get Support", url=MENTOR_CONTACT)],
+                        [
+                            InlineKeyboardButton(
+                                "🔙 Back to Menu", callback_data="main_menu"
+                            )
+                        ],
+                    ]
+                ),
+            )
+
+        return ConversationHandler.END
+
+    # ── NEW USER flow continues below ─────────────────────────────────────
+    # ... rest of receive_email unchanged from here
 
     # Step 1: Affiliation check
     try:

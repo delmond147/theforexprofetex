@@ -528,6 +528,49 @@ class ExnessClient:
         logger.info("mt5_nothing_found", email=email)
         return False, None, False
 
+    async def check_reentry_eligibility(
+        self, email: str, mt5_account_id: str
+    ) -> tuple[bool, str]:
+        """
+        Check if a previously verified kicked user can re-enter the group.
+        Used when removed=1 but mt5_verified=1 already.
+
+        Checks:
+        1. Still under partner affiliation
+        2. Existing MT5 account still has trading activity
+
+        Returns (can_rejoin, reason_if_not)
+        """
+
+        # Check 1: Still affiliated with partner
+        affiliation = await self.check_partner_affiliation(email)
+        if not isinstance(affiliation, dict) or not affiliation.get("affiliation"):
+            logger.info("reentry_denied_not_affiliated", email=email)
+            return False, "Partner_Switched"
+
+        # Check 2: Existing MT5 account still has volume
+        accounts = await self.get_client_accounts(email)
+        for account in accounts:
+            account_id = str(account.get("client_account") or "")
+            volume_lots = float(account.get("volume_lots") or 0)
+
+            if account_id == mt5_account_id and volume_lots > 0:
+                logger.info(
+                    "reentry_approved",
+                    email=email,
+                    account_id=account_id,
+                    volume_lots=volume_lots,
+                )
+                return True, "Ok"
+
+        # MT5 found but no volume = not eligible
+        logger.info(
+            "reentry_denied_no_trading",
+            email=email,
+            account_id=mt5_account_id,
+        )
+        return False, "No_Trading_Volume"
+
         # async def check_mt5_funded(
         #     self,
         #     email: str,

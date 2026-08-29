@@ -1,5 +1,6 @@
 """
-database.py — SQLite-backed user session memory and secure credential storage.
+database.py — SQLite-backed use
+session memory and secure credential storage.
 """
 
 from __future__ import annotations
@@ -150,6 +151,12 @@ def save_verification(
     email: str,
     mentorship_type: str,
 ) -> None:
+    """
+    Save affiliation verification.
+    Only updates email and mentorship — never touches mt5 data.
+    MT5 data is set once via set_mt5_verified and never wiped.
+    """
+
     now = datetime.utcnow().isoformat()
     with _get_conn() as conn:
         conn.execute(
@@ -160,8 +167,6 @@ def save_verification(
                 verified_at     = ?,
                 removed         = 0,
                 warning_sent_at = NULL,
-                mt5_verified    = 1,
-                mt5_check_deadline = NULL
             WHERE telegram_id = ?
         """,
             (email, mentorship_type, now, telegram_id),
@@ -233,16 +238,19 @@ def mark_warning_sent(telegram_id: int) -> None:
 
 
 def mark_removed(telegram_id: int) -> None:
+    """
+    Mark user as removed from group.
+    DOES NOT wipe verification data — user keeps their
+    verified_email and mt5_account_id permanently.
+    Only group access (removed flag) is revoked.
+    """
+
     with _get_conn() as conn:
         conn.execute(
             """
             UPDATE users
             SET removed = 1,
-                verified_email = NULL,
-                warning_sent_at = NULL,
-                mt5_verified = 0,
-                mt5_check_deadline = NULL,
-                mt5_account_id = NULL
+                warning_sent_at = NULL
             WHERE telegram_id = ?
         """,
             (telegram_id,),
@@ -363,8 +371,6 @@ def mark_inactive(telegram_id: int) -> None:
 
 
 # ── Bot config / credential storage ──────────────────────────────────────────
-
-
 def set_config(key: str, value: str) -> None:
     now = datetime.utcnow().isoformat()
     with _get_conn() as conn:
@@ -574,3 +580,17 @@ def get_verified_but_no_mt5() -> list[sqlite3.Row]:
               AND mt5_verified   = 0
               AND removed        = 0
         """).fetchall()
+
+
+def restore_user(telegram_id: int) -> None:
+    """Restore a removed user to active status without wiping their verification data."""
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE users
+            SET removed = 0,
+                warning_sent_at = NULL
+            WHERE telegram_id = ?
+        """,
+            (telegram_id,),
+        )
