@@ -166,7 +166,7 @@ def save_verification(
                 mentorship_type = ?,
                 verified_at     = ?,
                 removed         = 0,
-                warning_sent_at = NULL,
+                warning_sent_at = NULL
             WHERE telegram_id = ?
         """,
             (email, mentorship_type, now, telegram_id),
