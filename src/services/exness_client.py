@@ -393,58 +393,59 @@ class ExnessClient:
         verified_at: str | None = None,
     ) -> tuple[bool, str | None, bool]:
         """
-        Check if client has a NEW MT5 account with confirmed trading volume.
+        Check if client has an MT5 account under THIS partner that has trades.
 
-        1. MT5 account exists
-        2. Account created on or after verified_at (new account)
-        3. volume_lots > 0 (real trades placed = account was funded)
-        STRICT check: client must have a NEW MT5 account with volume_lots > 0.
+        Uses the affiliation endpoint to get partner-linked account IDs,
+        then checks those specific accounts for volume_lots > 0.
 
-        volume_lots > 0 = real trades placed = account was funded.
-        No volume = no trades = account not funded = DENY ACCESS.
+        This is more reliable than date comparison — the affiliation response
+        tells us exactly which accounts are under this partner.
 
         Returns (is_funded, mt5_account_id, is_new_account)
-        """
-        from datetime import datetime, timedelta
 
-        accounts = await self.get_client_accounts(email)
+        """
+
+        # Step 1: Get accounts linked to THIS partner via affiliation check
+        affiliation = await self.check_partner_affiliation(email)
+        logger.info(
+            "mt5_affiliation_accounts",
+            email=email,
+            affiliation=str(affiliation)[:300],
+        )
+
+        partner_account_ids = set()
+        if isinstance(affiliation, dict) and affiliation.get("affiliation"):
+            raw_accounts = affiliation.get("accounts") or []
+            partner_account_ids = {str(a) for a in raw_accounts}
 
         logger.info(
-            "mt5_check_inputs",
+            "mt5_partner_accounts",
             email=email,
-            verified_at=verified_at,
-            account_count=len(accounts),
-            accounts_summary=str(
+            partner_account_ids=partner_account_ids,
+        )
+
+        # Step 2: Get all MT5 accounts for this email with trading data
+        accounts = await self.get_client_accounts(email)
+        logger.info(
+            "mt5_all_accounts",
+            email=email,
+            count=len(accounts),
+            summary=str(
                 [
                     {
                         "id": str(a.get("client_account", "")),
                         "platform": str(a.get("platform", "")),
-                        "created": str(a.get("client_account_created", "")),
                         "volume_lots": str(a.get("volume_lots", "0")),
+                        "created": str(a.get("client_account_created", "")),
                     }
                     for a in accounts
                 ]
-            )[:600],
+            )[:500],
         )
 
-        if not accounts:
-            return False, None, False
-
-        # Parse verified_at date once
-        verified_date = None
-        if verified_at:
-            try:
-                verified_date = datetime.fromisoformat(verified_at[:10]).date()
-            except Exception as e:
-                logger.error(
-                    "verified_at_parse_failed", verified_at=verified_at, error=str(e)
-                )
-                # If we can't parse verified_at, be STRICT — treat all as old
-                verified_date = None
-
-        new_funded = []
-        new_unfunded = []
-        old_funded = []
+        funded_partner_account = None  # under this partner + has trades
+        unfunded_partner_account = None  # under this partner + no trades yet
+        funded_other_account = None  # under different partner + has trades
 
         for account in accounts:
             platform = str(account.get("platform") or "").lower().strip()
@@ -452,80 +453,65 @@ class ExnessClient:
                 continue
 
             account_id = str(account.get("client_account") or "").strip()
-            created_str = str(account.get("client_account_created") or "").strip()
             volume_lots = float(account.get("volume_lots") or 0)
 
             if not account_id:
                 continue
 
-            # ── Is this a NEW account? ────────────────────────────────────────
-            is_new = False
-            if verified_date and created_str:
-                try:
-                    created_date = datetime.fromisoformat(created_str[:10]).date()
-                except Exception as e:
-                    logger.error(
-                        "created_date_parse_failed", created=created_str, error=str(e)
-                    )
-                    created_date = None
-
-                    # Account must be created on or after verification date
-                    # 1 day buffer for timezone differences only
-                    is_new = created_date >= (verified_date - timedelta(days=1))
-                except Exception as e:
-                    logger.error(
-                        "created_date_parse_failed", created=created_str, error=str(e)
-                    )
-                    is_new = False  # parse failed = treat as old = STRICT
-            elif not verified_date:
-                # No verified_at = cannot determine newness = STRICT = old
-                is_new = False
-
-            # ── Is this account funded and traded? ────────────────────────────
-            is_funded = volume_lots > 0
+            # Is this account under THIS partner?
+            is_partner_account = account_id in partner_account_ids
 
             logger.info(
-                "mt5_account_result",
+                "mt5_account_check",
                 account_id=account_id,
-                created=created_str,
-                verified_date=str(verified_date),
-                is_new=is_new,
                 volume_lots=volume_lots,
-                is_funded=is_funded,
+                is_partner_account=is_partner_account,
+                in_partner_list=partner_account_ids,
             )
 
-        if is_new and is_funded:
-            new_funded.append(account_id)
-        elif is_new and not is_funded:
-            new_unfunded.append(account_id)
-        elif not is_new and is_funded:
-            old_funded.append(account_id)
+            if is_partner_account and volume_lots > 0:
+                funded_partner_account = account_id
+                break  # perfect match — stop here
+
+            elif is_partner_account and volume_lots == 0:
+                if not unfunded_partner_account:
+                    unfunded_partner_account = account_id
+
+            elif not is_partner_account and volume_lots > 0:
+                if not funded_other_account:
+                    funded_other_account = account_id
 
         logger.info(
-            "mt5_final_decision",
+            "mt5_decision",
             email=email,
-            new_funded=new_funded,
-            new_unfunded=new_unfunded,
-            old_funded=old_funded,
+            funded_partner=funded_partner_account,
+            unfunded_partner=unfunded_partner_account,
+            funded_other=funded_other_account,
         )
 
-        # ── CASE 1: New + funded + traded = FULL PASS ✅ ──────────────────────
-        if new_funded:
-            logger.info("mt5_pass", email=email, account_id=new_funded[0])
-            return True, new_funded[0], True
+        # ── CASE 1: Partner account + funded + traded = FULL PASS ✅ ─────────
+        if funded_partner_account:
+            logger.info("mt5_full_pass", email=email, account_id=funded_partner_account)
+            return True, funded_partner_account, True
 
-        # ── CASE 2: New account exists but NOT funded ⏳ ──────────────────────
-        if new_unfunded:
-            logger.info("mt5_new_not_funded", email=email, account_id=new_unfunded[0])
-            return False, new_unfunded[0], True
+        # ── CASE 2: Partner account exists but no trades yet ⏳ ───────────────
+        if unfunded_partner_account:
+            logger.info(
+                "mt5_partner_not_funded",
+                email=email,
+                account_id=unfunded_partner_account,
+            )
+            return False, unfunded_partner_account, True
 
-        # ── CASE 3: Only old funded accounts ❌ ───────────────────────────────
-        if old_funded:
-            logger.info("mt5_old_only", email=email, account_id=old_funded[0])
-            return False, old_funded[0], False
+        # ── CASE 3: Only accounts from other partners ❌ ──────────────────────
+        if funded_other_account:
+            logger.info(
+                "mt5_only_other_partner", email=email, account_id=funded_other_account
+            )
+            return False, funded_other_account, False
 
-        # ── CASE 4: Nothing usable ❌ ─────────────────────────────────────────
-        logger.info("mt5_nothing_found", email=email)
+        # ── CASE 4: No MT5 at all ❌ ──────────────────────────────────────────
+        logger.info("mt5_none_found", email=email)
         return False, None, False
 
     async def check_reentry_eligibility(
