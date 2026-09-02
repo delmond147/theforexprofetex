@@ -665,53 +665,52 @@ class ExnessClient:
         #     logger.info("mt5_no_accounts_found", email=email)
         #     return False, None, False
 
-        # async def _check_account_has_trades(self, account_id: str) -> bool:
-        #     """
-        #     Check if a specific MT5 account has at least one closed trade.
-        #     """
-        #     try:
-        #         # Try without date filter first — get all orders ever
-        #         data = await self._get(
-        #             "/reports/orders/", params={"client_account": account_id}
-        #         )
-        #         logger.info(
-        #             "orders_full_response",
-        #             account_id=account_id,
-        #             response_type=type(data).__name__,
-        #             data=str(data)[:500],
-        #         )
+    async def _check_account_has_trades(self, account_id: str) -> bool:
+        """
+        Check if a specific MT5 account has at least one closed trade.
+        """
+        try:
+            # Try without date filter first — get all orders ever
+            data = await self._get(
+                "/reports/orders/", params={"client_account": account_id}
+            )
+            logger.info(
+                "orders_full_response",
+                response_type=type(data).__name__,
+                data=str(data)[:500],
+            )
 
-        #         if data is None:
-        #             logger.warning("orders_returned_none", account_id=account_id)
-        #             return False
+            if data is None:
+                logger.warning("orders_returned_none", account_id=account_id)
+                return False
 
-        #         if isinstance(data, dict):
-        #             orders = data.get("data") or []
-        #             totals = data.get("totals") or {}
-        #             total_count = int(totals.get("count") or 0)
+            if isinstance(data, dict):
+                orders = data.get("data") or []
+                totals = data.get("totals") or {}
+                total_count = int(totals.get("count") or 0)
 
-        #             logger.info(
-        #                 "orders_parsed",
-        #                 account_id=account_id,
-        #                 orders_count=len(orders),
-        #                 totals_count=total_count,
-        #             )
+                logger.info(
+                    "orders_parsed",
+                    account_id=account_id,
+                    orders_count=len(orders),
+                    totals_count=total_count,
+                )
 
-        #             if len(orders) > 0 or total_count > 0:
-        #                 return True
+                if len(orders) > 0 or total_count > 0:
+                    return True
 
-        #         if isinstance(data, list) and len(data) > 0:
-        #             logger.info(
-        #                 "orders_list_format", account_id=account_id, count=len(data)
-        #             )
-        #             return True
+            if isinstance(data, list) and len(data) > 0:
+                logger.info(
+                    "orders_list_format", account_id=account_id, count=len(data)
+                )
+                return True
 
-        #         logger.info("orders_empty", account_id=account_id)
-        #         return False
+            logger.info("orders_empty", account_id=account_id)
+            return False
 
-        #     except Exception as e:
-        #         logger.error("orders_check_failed", account_id=account_id, error=str(e))
-        #         return False
+        except Exception as e:
+            logger.error("orders_check_failed", account_id=account_id, error=str(e))
+            return False
 
     async def close(self) -> None:
         """Close the underlying HTTP client and release connection pool."""
