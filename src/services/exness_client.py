@@ -712,6 +712,56 @@ class ExnessClient:
             logger.error("orders_check_failed", account_id=account_id, error=str(e))
             return False
 
+    async def check_reentry_eligibility(
+        self, email: str, mt5_account_id: str
+    ) -> tuple[bool, str]:
+        """
+        Check if a previously kicked user can re-enter the group.
+        Used when removed=1 but mt5_verified=1 already exists.
+
+        Checks:
+        1. Still under partner affiliation
+        2. Existing MT% account still has volume_lots > 0
+
+        Returns (can_rejoin, reason)
+        reason: "ok" | "Partner_switched" | "no_trades" | "no_account"
+        """
+
+        # Check 1: Still under partner
+
+        try:
+            affiliation = await self.check_partner_affiliation(email)
+            if not isinstance(affiliation, dict) or not affiliation.get("affiliation"):
+                logger.info("reentry_denied_not_affiliated", email=email)
+                return False, "Partner_switched"
+
+        except Exception as e:
+            logger.error("reentry_affiliation_check_failed", email=email, error=str(e))
+            return False, "Partner_switched"
+
+        # Check 2: Existing MT% account still has volume
+        try:
+            accounts = await self.get_client_accounts(email)
+            for account in accounts:
+                account_id = str(account.get("client_account") or "")
+                volume_lots = float(account.get("volume_lots") or 0)
+
+                if account_id == mt5_account_id and volume_lots > 0:
+                    logger.info(
+                        "reentry_approved",
+                        email=email,
+                        account_id=account_id,
+                        volume_lots=volume_lots,
+                    )
+                    return True, "ok"
+            logger.info(
+                "reentry_denied_no_volume", email=email, mt5_account_id=mt5_account_id
+            )
+            return False, "no_trades"
+        except Exception as e:
+            logger.error("reentry_mt5_check_failed", email=email, error=str(e))
+            return False, "no_account"
+
     async def close(self) -> None:
         """Close the underlying HTTP client and release connection pool."""
         try:
