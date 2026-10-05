@@ -713,40 +713,86 @@ class ExnessClient:
             return False
 
     async def check_reentry_eligibility(
-        self, email: str, mt5_account_id: str
+        self,
+        email: str,
+        mt5_account_id: str,
     ) -> tuple[bool, str]:
         """
         Check if a previously kicked user can re-enter the group.
-        Used when removed=1 but mt5_verified=1 already exists.
 
         Checks:
         1. Still under partner affiliation
-        2. Existing MT% account still has volume_lots > 0
+        2. ANY MT5 account under this partner has volume_lots > 0
+        (we don't strictly match the stored account ID because
+        the format may differ between endpoints)
 
         Returns (can_rejoin, reason)
-        reason: "ok" | "Partner_switched" | "no_trades" | "no_account"
+        reason: "ok" | "partner_switched" | "no_trades"
         """
-
-        # Check 1: Still under partner
-
+        # ── Check 1: Still under partner ─────────────────────────────────────
         try:
             affiliation = await self.check_partner_affiliation(email)
+            logger.info(
+                "reentry_affiliation_check",
+                email=email,
+                affiliation=str(affiliation)[:200],
+            )
             if not isinstance(affiliation, dict) or not affiliation.get("affiliation"):
-                logger.info("reentry_denied_not_affiliated", email=email)
-                return False, "Partner_switched"
+                logger.info("reentry_denied_partner_switched", email=email)
+                return False, "partner_switched"
+
+            partner_account_ids = {str(a) for a in (affiliation.get("accounts") or [])}
+            logger.info(
+                "reentry_partner_accounts", email=email, ids=partner_account_ids
+            )
 
         except Exception as e:
-            logger.error("reentry_affiliation_check_failed", email=email, error=str(e))
-            return False, "Partner_switched"
+            logger.error("reentry_affiliation_failed", email=email, error=str(e))
+            return False, "partner_switched"
 
-        # Check 2: Existing MT% account still has volume
+        # ── Check 2: Any MT5 under this partner has trading volume ────────────
         try:
             accounts = await self.get_client_accounts(email)
+            logger.info(
+                "reentry_accounts",
+                email=email,
+                stored_mt5=mt5_account_id,
+                all_accounts=[
+                    {
+                        "id": str(a.get("client_account", "")),
+                        "platform": str(a.get("platform", "")),
+                        "volume": str(a.get("volume_lots", "0")),
+                    }
+                    for a in accounts
+                ],
+            )
+
             for account in accounts:
-                account_id = str(account.get("client_account") or "")
+                account_id = str(account.get("client_account") or "").strip()
+                platform = str(account.get("platform") or "").lower().strip()
                 volume_lots = float(account.get("volume_lots") or 0)
 
-                if account_id == mt5_account_id and volume_lots > 0:
+                if platform != "mt5":
+                    continue
+
+                # Check if this account is under the current partner
+                # Either matches stored ID OR is in the partner accounts list
+                is_partner_account = (
+                    account_id in partner_account_ids
+                    or account_id == str(mt5_account_id).strip()
+                )
+
+                logger.info(
+                    "reentry_account_eval",
+                    account_id=account_id,
+                    stored_id=mt5_account_id,
+                    is_partner=is_partner_account,
+                    volume_lots=volume_lots,
+                    in_partner_ids=account_id in partner_account_ids,
+                    id_match=account_id == str(mt5_account_id).strip(),
+                )
+
+                if is_partner_account and volume_lots > 0:
                     logger.info(
                         "reentry_approved",
                         email=email,
@@ -754,13 +800,26 @@ class ExnessClient:
                         volume_lots=volume_lots,
                     )
                     return True, "ok"
+
+            # No partner MT5 with volume found — check why
+            has_any_partner_mt5 = any(
+                str(a.get("client_account", "")) in partner_account_ids
+                or str(a.get("platform", "")).lower() == "mt5"
+                for a in accounts
+            )
+
             logger.info(
-                "reentry_denied_no_volume", email=email, mt5_account_id=mt5_account_id
+                "reentry_denied_no_volume",
+                email=email,
+                stored_id=mt5_account_id,
+                partner_ids=partner_account_ids,
+                has_any_partner_mt5=has_any_partner_mt5,
             )
             return False, "no_trades"
+
         except Exception as e:
             logger.error("reentry_mt5_check_failed", email=email, error=str(e))
-            return False, "no_account"
+            return False, "no_trades"
 
     async def close(self) -> None:
         """Close the underlying HTTP client and release connection pool."""
