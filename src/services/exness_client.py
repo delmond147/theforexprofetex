@@ -488,24 +488,24 @@ class ExnessClient:
         mt5_account_id: str,
     ) -> tuple[bool, str]:
         """
-        Check if a previously kicked member can rejoin the group.
+        Check if a previously kicked member can rejoin.
 
-        Different from check_mt5_funded — this does NOT require a new MT5.
-        The member already has a verified MT5 account. We just check:
-        1. Still under this partner (not switched)
-        2. Has placed recent trades (within last 30 days)
-        Uses orders endpoint with date_from filter to confirm
-        CURRENT activity — not just historical volume_lots which
-        could be from months ago before they went inactive.
+        Logic:
+        1. Still under this partner? → check affiliation
+        2. Has any MT5 account with volume_lots > 0 under this partner?
+        OR has placed any trade ever on their stored MT5 account?
+
+        For reentry we are lenient — the member already passed full
+        verification once. We just need to confirm they haven't switched
+        partners and their account is not completely empty.
 
         Returns (can_rejoin, reason)
-        reason: "ok" | "partner_switched" | "no_trades"
         """
         # ── Check 1: Still under this partner ────────────────────────────────
         try:
             affiliation = await self.check_partner_affiliation(email)
             logger.info(
-                "reentry_affiliation", email=email, result=str(affiliation)[:200]
+                "reentry_affiliation", email=email, result=str(affiliation)[:300]
             )
 
             if not isinstance(affiliation, dict) or not affiliation.get("affiliation"):
@@ -513,86 +513,114 @@ class ExnessClient:
                 return False, "partner_switched"
 
             partner_account_ids = {str(a) for a in (affiliation.get("accounts") or [])}
-            logger.info("reentry_partner_ids", email=email, ids=partner_account_ids)
+            logger.info(
+                "reentry_partner_ids",
+                email=email,
+                partner_ids=partner_account_ids,
+                stored_mt5=mt5_account_id,
+            )
 
         except Exception as e:
             logger.error("reentry_affiliation_error", email=email, error=str(e))
             return False, "partner_switched"
 
-        # ── Check 2: Recent trades on any partner MT5 account ────────────────
+        # ── Check 2: MT5 account exists under this partner ────────────────────
         try:
             accounts = await self.get_client_accounts(email)
             logger.info(
-                "reentry_accounts_found",
+                "reentry_all_accounts",
                 email=email,
-                stored_mt5=mt5_account_id,
-                accounts=[
+                count=len(accounts),
+                details=[
                     {
                         "id": str(a.get("client_account", "")),
                         "platform": str(a.get("platform", "")),
                         "volume": str(a.get("volume_lots", "0")),
+                        "created": str(a.get("client_account_created", "")),
+                        "last_trade": str(a.get("client_account_last_trade", "")),
                     }
                     for a in accounts
                 ],
             )
 
+            stored_id = str(mt5_account_id).strip()
+
             for account in accounts:
                 account_id = str(account.get("client_account") or "").strip()
                 platform = str(account.get("platform") or "").lower().strip()
                 volume_lots = float(account.get("volume_lots") or 0)
+                last_trade = str(account.get("client_account_last_trade") or "").strip()
 
                 if platform != "mt5":
                     continue
 
-                # Accept if account matches stored ID OR is in partner list
-                is_partner_account = (
-                    account_id in partner_account_ids
-                    or account_id == str(mt5_account_id).strip()
+                # Is this a partner account?
+                is_partner = (
+                    account_id in partner_account_ids or account_id == stored_id
                 )
 
                 logger.info(
-                    "reentry_account_eval",
+                    "reentry_account_check",
                     account_id=account_id,
-                    stored_id=mt5_account_id,
-                    is_partner=is_partner_account,
+                    stored_id=stored_id,
+                    is_partner=is_partner,
                     volume_lots=volume_lots,
+                    last_trade=last_trade,
+                    in_partner_list=account_id in partner_account_ids,
+                    id_match=account_id == stored_id,
                 )
 
-                if not is_partner_account:
+                if not is_partner:
                     continue
 
-                # ── Check recent trades — NOT just historical volume ───────
-                # volume_lots is cumulative all-time, could be months old
-                # We need to confirm they traded recently (last 30 days)
-                has_recent_trades = await self._check_account_recent_trades(
-                    account_id, days=30
-                )
-
-                logger.info(
-                    "reentry_trade_check",
-                    account_id=account_id,
-                    has_recent_trades=has_recent_trades,
-                    volume_lots=volume_lots,
-                )
-
-                if has_recent_trades:
-                    logger.info("reentry_approved", email=email, account_id=account_id)
-                    return True, "ok"
-
-                # Fallback: if orders endpoint returns nothing but
-                # volume_lots > 0 and account is recent, allow reentry
-                # This handles cases where the orders endpoint is slow
+                # ── Pass conditions (any one is enough for reentry) ───────────
+                # Condition A: has cumulative volume (most reliable)
                 if volume_lots > 0:
                     logger.info(
-                        "reentry_approved_volume_fallback",
+                        "reentry_approved_volume",
                         email=email,
                         account_id=account_id,
-                        volume_lots=volume_lots,
+                        volume=volume_lots,
                     )
                     return True, "ok"
 
+                # Condition B: has a last_trade date recorded
+                if last_trade and last_trade not in ("", "None", "null"):
+                    logger.info(
+                        "reentry_approved_last_trade",
+                        email=email,
+                        account_id=account_id,
+                        last_trade=last_trade,
+                    )
+                    return True, "ok"
+
+                # Condition C: check orders endpoint as final confirmation
+                has_any_trades = await self._check_account_has_trades(account_id)
+                logger.info(
+                    "reentry_orders_check",
+                    account_id=account_id,
+                    has_any_trades=has_any_trades,
+                )
+                if has_any_trades:
+                    logger.info(
+                        "reentry_approved_orders", email=email, account_id=account_id
+                    )
+                    return True, "ok"
+
+                # Partner account found but truly no trades anywhere
+                logger.info(
+                    "reentry_partner_account_no_trades",
+                    account_id=account_id,
+                    volume=volume_lots,
+                    last_trade=last_trade,
+                )
+
+            # No partner MT5 found at all
             logger.info(
-                "reentry_denied_no_recent_trades", email=email, stored_id=mt5_account_id
+                "reentry_denied_no_partner_mt5",
+                email=email,
+                partner_ids=partner_account_ids,
+                stored_id=stored_id,
             )
             return False, "no_trades"
 
